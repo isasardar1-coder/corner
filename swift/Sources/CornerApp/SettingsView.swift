@@ -331,11 +331,15 @@ struct SleepHistory: View {
             }
             rows.append(row)
         }
+        // five columns, the first a little wider (as the Windows grid's star widths)
+        let inner: CGFloat = model.full ? (fullW - 2 * m.side - 2 * m.sideMid) / 2 - 2 * m.padX : cardW - 2 * m.side - 2 * m.padX
+        let k: CGFloat = m.sp(1.25, 0.95)
+        let colW: [CGFloat] = [inner * k / (k + 4)] + Array(repeating: inner / (k + 4), count: 4)
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
                 ForEach(0..<5, id: \.self) { c in
                     Text(heads[c].uppercased()).font(m.font(10, true)).foregroundColor(T.muted)
-                        .frame(maxWidth: .infinity, alignment: .leading).layoutPriority(c == 0 ? 1.2 : 1)
+                        .lineLimit(1).frame(width: colW[c], alignment: .leading)
                 }
             }
             .padding(.vertical, 3)
@@ -344,7 +348,7 @@ struct SleepHistory: View {
                     ForEach(0..<5, id: \.self) { c in
                         Text(rows[r][c]).font(c == 0 ? m.font(11) : m.font(m.sp(12, 11), true)).foregroundColor(c == 0 ? T.muted : (rows[r][c] == "–" ? T.faint : T.text))
                             .lineLimit(c == 0 ? 2 : 1).fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(width: colW[c], alignment: .leading)
                     }
                 }
                 .padding(.vertical, 3)

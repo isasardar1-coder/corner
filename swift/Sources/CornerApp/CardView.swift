@@ -26,7 +26,7 @@ struct CardView: View {
                     .background(GeometryReader { g in Color.clear.preference(key: HeaderHeightKey.self, value: g.size.height) })
             }
             if model.settingsOpen {
-                FitScroll(maxHeight: bodyMax) { SettingsPage().padding(.bottom, m.side) }
+                FitScroll(maxHeight: bodyMax - m.side) { SettingsPage() }.padding(.bottom, m.side)
             } else if model.full {
                 FullBody(maxHeight: bodyMax)
             } else {
@@ -185,7 +185,9 @@ struct CornerBody: View {
         let tasksView = model.tab == 0
         let rest = model.isBare
         let prompt = model.promptOnly
-        FitScroll(maxHeight: maxHeight) {
+        // the panel's bottom (and top, with no header) margin sits outside the scrolling part, so what scrolls
+        // stops short of the rounded corners
+        FitScroll(maxHeight: maxHeight - m.side - (alone ? m.side : 0)) {
             VStack(alignment: .leading, spacing: m.gapY) {
                 if model.checkInOpen && !rest && !prompt { CheckInView() }
                 if model.feedbackOpen { FeedbackView() }
@@ -198,9 +200,9 @@ struct CornerBody: View {
             }
             .padding(.leading, m.side)
             .padding(.trailing, m.sideMid)
-            .padding(.top, alone ? m.side : 0)
-            .padding(.bottom, m.side)
         }
+        .padding(.top, alone ? m.side : 0)
+        .padding(.bottom, m.side)
     }
 }
 
@@ -213,7 +215,7 @@ struct FullBody: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
-            FitScroll(maxHeight: maxHeight) {
+            FitScroll(maxHeight: maxHeight - m.side) {
                 VStack(alignment: .leading, spacing: m.gapY) {
                     if model.checkInOpen { CheckInView() }
                     if model.feedbackOpen { FeedbackView() }
@@ -224,15 +226,15 @@ struct FullBody: View {
                 }
                 .padding(.leading, m.side)
                 .padding(.trailing, m.sideMid)
-                .padding(.bottom, m.side)
             }
+            .padding(.bottom, m.side)
             .frame(width: fullW / 2)
-            FitScroll(maxHeight: maxHeight) {
+            FitScroll(maxHeight: maxHeight - m.side) {
                 EnergyView()
                     .padding(.leading, m.sideMid)
                     .padding(.trailing, m.side)
-                    .padding(.bottom, m.side)
             }
+            .padding(.bottom, m.side)
             .frame(width: fullW / 2)
         }
     }
