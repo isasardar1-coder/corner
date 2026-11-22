@@ -623,6 +623,10 @@ struct FitHeightKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
+/// Test renders draw a plain clipped box instead of a scroll view: a bitmap of the window (cacheDisplay) does not
+/// clip a scroll view's content the way the screen does.
+enum FitScrollFlag { static var plain = false }
+
 /// A vertical scroll view as tall as its content, up to maxHeight.
 struct FitScroll<Content: View>: View {
     let maxHeight: CGFloat
@@ -630,11 +634,25 @@ struct FitScroll<Content: View>: View {
     @State private var h: CGFloat = 0
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            content()
-                .background(GeometryReader { g in Color.clear.preference(key: FitHeightKey.self, value: g.size.height) })
+        Group {
+            if FitScrollFlag.plain {
+                VStack(spacing: 0) {
+                    content()
+                        .fixedSize(horizontal: false, vertical: true)
+                        .background(GeometryReader { g in Color.clear.preference(key: FitHeightKey.self, value: g.size.height) })
+                    Spacer(minLength: 0)
+                }
+                .frame(height: max(1, min(h, maxHeight)), alignment: .top)
+                .clipped()
+            } else {
+                ScrollView(.vertical, showsIndicators: false) {
+                    content()
+                        .background(GeometryReader { g in Color.clear.preference(key: FitHeightKey.self, value: g.size.height) })
+                }
+                .frame(height: max(1, min(h, maxHeight)))
+                .clipped()
+            }
         }
-        .frame(height: max(1, min(h, maxHeight)))
         .onPreferenceChange(FitHeightKey.self) { v in if abs(v - h) > 0.5 { h = v } }
         .transformPreference(FitHeightKey.self) { $0 = 0 }
     }

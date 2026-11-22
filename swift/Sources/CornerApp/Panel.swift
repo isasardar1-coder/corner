@@ -521,6 +521,7 @@ final class PanelController: NSObject, NSMenuDelegate {
     func demo(_ path: String, _ modeIn: String) {
         var mode = modeIn
         model.demoRun = true
+        FitScrollFlag.plain = true
         if mode.hasPrefix("onboard") {
             let step = Int(String(mode.dropFirst(7))) ?? 0
             showOnboarding(step: step)
