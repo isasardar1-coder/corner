@@ -157,7 +157,11 @@ extension Date {
         let sod = dateOnly
         let diff = timeIntervalSince(sod)
         let c = CornerTime.calendar.dateComponents([.hour, .minute, .second], from: self)
-        let wall = Double((c.hour ?? 0) * 3600 + (c.minute ?? 0) * 60 + (c.second ?? 0))
+        let hh: Int = c.hour ?? 0
+        let mm: Int = c.minute ?? 0
+        let ss: Int = c.second ?? 0
+        let wallSeconds: Int = hh * 3600 + mm * 60 + ss
+        let wall = Double(wallSeconds)
         if abs(diff.rounded(.down) - wall) < 1 { return diff }
         return wall + (diff - diff.rounded(.down))
     }
