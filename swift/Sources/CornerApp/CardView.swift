@@ -457,7 +457,7 @@ struct AddBox: View {
         }
         .frame(height: m.sp(40, 32))
         .background(Capsule().fill(T.field))
-        .overlay(Capsule().stroke(focused ? T.strong : Color.clear, lineWidth: 1.5))
+        .overlay(Capsule().strokeBorder(focused ? T.strong : Color.clear, lineWidth: 1.5))
         .overlay(Rim(radius: 20))
         .onAppear { if model.addOpen && !model.full && !model.demoRun { focused = true } }
         .onChange(of: model.focusInput) { _ in focused = true }

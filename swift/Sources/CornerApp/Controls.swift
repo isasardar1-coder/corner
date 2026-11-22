@@ -543,7 +543,7 @@ struct TimeEntryView: View {
         .padding(.vertical, 5)
         .frame(width: 92, alignment: .leading)
         .background(Capsule().fill(surface ?? T.field))
-        .overlay(Capsule().stroke(focused ? T.strong : Color.clear, lineWidth: 1.5))
+        .overlay(Capsule().strokeBorder(focused ? T.strong : Color.clear, lineWidth: 1.5))
     }
 }
 

@@ -392,7 +392,7 @@ struct ObInput: View {
         HintField(hint: hint, text: Binding(get: { text }, set: { text = String($0.prefix(60)) }), size: 16, focus: $focused, onSubmit: onSubmit)
             .padding(.horizontal, 18).padding(.top, 11).padding(.bottom, 12)
             .background(Capsule().fill(T.field))
-            .overlay(Capsule().stroke(focused ? T.strong : Color.clear, lineWidth: 1.5))
+            .overlay(Capsule().strokeBorder(focused ? T.strong : Color.clear, lineWidth: 1.5))
             .onAppear { if autofocus { DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { focused = true } } }
     }
 }
