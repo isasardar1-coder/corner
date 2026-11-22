@@ -585,7 +585,7 @@ final class PanelController: NSObject, NSMenuDelegate {
             if let n = SleepLog.build(asleep: asleep, woke: woke, day: day.addingDays(-i)) { SleepLog.record(n) }
         }
         if mode == "split" || mode == "nap" {
-            if let n = SleepLog.buildSplit(asleep: [23.5 * 3600, 5.25 * 3600], woke: [4.5 * 3600, 7 * 3600], day: day) { SleepLog.record(n) }
+            if let n = SleepLog.buildSplit(asleep: [23.5 * 3600, 5.25 * 3600], woke: [4.5 * 3600, 7.0 * 3600], day: day) { SleepLog.record(n) }
         }
         if mode == "nap" {
             SleepLog.addNap(day, from: day.addingHours(14.5), to: day.addingHours(14.5).addingMinutes(25))
