@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Corner for macOS, on Avalonia. Also runs on Windows, which is how it is test-rendered without a Mac. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>Corner</AssemblyName>
+    <RootNamespace>Corner</RootNamespace>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RollForward>Major</RollForward>
+    <ApplicationIcon>..\..\windows\src\corner.ico</ApplicationIcon>
+    <NoWarn>$(NoWarn);CS0169;CS0649;CS0414;CS0067;CS0618</NoWarn>
+    <RuntimeIdentifiers>osx-arm64;osx-x64;win-x64</RuntimeIdentifiers>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.23" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.23" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.23" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Corner.Core\Corner.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Gilroy with one family name and real weights: made from ..\..\windows\*.ttf by tools\fonts.py -->
+    <AvaloniaResource Include="Assets\fonts\*.ttf" />
+    <AvaloniaResource Include="Assets\tray.png" />
+    <AvaloniaResource Include="Assets\icon.png" />
+    <Content Include="..\..\windows\ping.wav" Link="ping.wav" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Avalonia" />
+    <Using Include="Avalonia.Controls" />
+    <Using Include="Avalonia.Controls.Documents" />
+    <Using Include="Avalonia.Controls.Shapes" />
+    <Using Include="Avalonia.Controls.Primitives" />
+    <Using Include="Avalonia.Collections" />
+    <Using Include="Avalonia.Input" />
+    <Using Include="Avalonia.Interactivity" />
+    <Using Include="Avalonia.Layout" />
+    <Using Include="Avalonia.Media" />
+    <Using Include="Avalonia.Media.Imaging" />
+    <Using Include="Avalonia.Threading" />
+  </ItemGroup>
+</Project>

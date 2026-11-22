@@ -1,0 +1,52 @@
+CORNER
+A small to-do list that lives in a corner of your screen and plans your day
+around your energy: hard tasks on your peaks, easy ones in your afternoon dip.
+
+Needs Windows 10 or 11. Nothing to install.
+
+
+STARTING IT
+
+1. Move this whole folder somewhere that is yours, for example Documents.
+   (Not Program Files: Corner keeps its notes beside Corner.exe.)
+2. Double-click Corner.exe.
+3. Windows may say "Windows protected your PC", because the app is not from
+   the Microsoft Store. Click "More info", then "Run anyway".
+4. A welcome window asks your name, how much sleep you need and what you do
+   most days. That's it.
+
+Corner then lives in the top-right corner of your screen: move your pointer
+there to see your tasks. Its icon sits in the system tray (near the clock);
+right-click it for more, including Quit.
+
+Corner starts with Windows. To stop that: Settings (the gear) > Start with
+Windows, or right-click the tray icon.
+
+
+EACH DAY
+
+- In the morning it asks how you slept, and draws your energy for the day.
+- Add tasks with an effort level and a length, e.g.  Write report !high 45m
+  (!low, !med, !high; 20m, 1h ...).
+- Routines (in the energy view): your daily things. Press "Add to today" to
+  send them to your tasks.
+- "Plan my day" fits your tasks to your energy, from now until bedtime.
+- A card with a ring appears 10 minutes before each energy peak and
+  20 minutes before the dip.
+
+
+YOUR DATA
+
+Everything stays on your PC, in this folder:
+  tasks.json, routines.json, sleep.json, settings.json   what Corner needs
+  done.csv    every task you finish (opens in Excel)
+  days.csv    one line per day: done, open, by effort, sleep
+Settings > Your record shows the last 7 days.
+
+To change the sound, replace ping.wav with any .wav file of your own.
+
+
+REMOVING IT
+
+Right-click the tray icon > Quit, turn off "Start with Windows" first if you
+like, then delete the folder.

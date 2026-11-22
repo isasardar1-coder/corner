@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Corner's platform-neutral code: tasks, sleep log, energy model, planner, routines, tags, logs.
+       src/ is GENERATED from ../windows/src by tools/sync_core.py. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Corner</RootNamespace>
+    <AssemblyName>Corner.Core</AssemblyName>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <NoWarn>$(NoWarn);CS0169;CS0649;CS0414</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="CornerTests" />
+    <InternalsVisibleTo Include="Corner" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,25 @@
+bin/
+obj/
+out/
+.build/
+.swiftpm/
+*.user
+.vs/
+.DS_Store
+# Personal data files Corner writes beside itself or in its data folder
+tasks*.json
+sleep*.json
+!swift/Tests/data/sleep.json
+!windows/tests/data/sleep.json
+routines.json
+settings.json
+roster.json
+profile.txt
+done.csv
+days.csv
+checkins.csv
+!swift/Tests/data/checkins.csv
+!windows/tests/data/checkins.csv
+feedback.csv
+error.log
+windows/Corner.exe
