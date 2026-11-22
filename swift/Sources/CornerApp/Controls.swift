@@ -229,7 +229,7 @@ struct Btn: View {
             .padding(.top, vp)
             .padding(.bottom, vp + 1)
             .background(Capsule().fill(ground))
-            .overlay(Capsule().stroke(kind == 1 && on == 2 ? T.strongLine : Color.clear, lineWidth: 1))
+            .overlay(Capsule().strokeBorder(kind == 1 && on == 2 ? T.strongLine : Color.clear, lineWidth: 1))
             .opacity(kind == 0 && hot ? 0.88 : 1)
             .contentShape(Capsule())
             .onHover { hot = $0 }

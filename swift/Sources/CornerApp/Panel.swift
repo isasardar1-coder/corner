@@ -9,6 +9,8 @@ import CornerCore
 final class CornerPanel: NSPanel {
     override var canBecomeKey: Bool { return true }
     override var canBecomeMain: Bool { return false }
+    /// The window is the card plus a margin for its shadow; that margin may run past the screen's edge.
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { return frameRect }
 }
 
 /// Clicks reach the card even while another app is in front.

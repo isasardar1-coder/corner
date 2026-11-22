@@ -213,6 +213,7 @@ struct TaskRow: View {
                         if model.full { DueChip(t: t, rowHot: hot).padding(.trailing, 4) }
                         TimerPill(t: t, big: false)
                     }
+                    .fixedSize()
                     .frame(height: rowH)
                 }
                 Color.clear.frame(width: rowOver, height: 1)

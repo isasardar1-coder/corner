@@ -5,16 +5,26 @@ import AppKit
 import SwiftUI
 import CornerCore
 
+struct HeaderHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
 struct CardView: View {
     @EnvironmentObject var model: AppModel
+    @State private var headH: CGFloat = 0
 
     var body: some View {
         let m = model.m
         let showHeader = !model.promptOnly && !model.isBare
-        let headerH: CGFloat = showHeader ? (model.full ? 84 : 48) : 0
+        let guess: CGFloat = model.full ? 72 : 48
+        let headerH: CGFloat = showHeader ? (headH > 0 ? headH : guess) : 0
         let bodyMax = max(150, model.maxCardH - headerH)
         VStack(alignment: .leading, spacing: 0) {
-            if showHeader { HeaderView() }
+            if showHeader {
+                HeaderView()
+                    .background(GeometryReader { g in Color.clear.preference(key: HeaderHeightKey.self, value: g.size.height) })
+            }
             if model.settingsOpen {
                 FitScroll(maxHeight: bodyMax) { SettingsPage().padding(.bottom, m.side) }
             } else if model.full {
@@ -27,6 +37,7 @@ struct CardView: View {
         .frame(minHeight: model.full ? min(fullMinH, model.maxCardH) : 0, alignment: .top)
         .background(PanelBackground(radius: m.sp(32, T.glass ? 28 : 26)))
         .environment(\.m, m)
+        .onPreferenceChange(HeaderHeightKey.self) { v in if abs(v - headH) > 0.5 { headH = v } }
         .id(model.full ? "full" : "corner")
     }
 }
