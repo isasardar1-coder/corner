@@ -563,6 +563,11 @@ final class PanelController: NSObject, NSMenuDelegate {
             guard let s = self else { exit(1) }
             s.place(animated: false)
             s.hosting.layoutSubtreeIfNeeded()
+            let scr = s.window.screen ?? NSScreen.main
+            Store.log("demo " + modeIn + ": screen " + NSStringFromRect(scr?.frame ?? .zero) + " visible " + NSStringFromRect(scr?.visibleFrame ?? .zero)
+                      + " window " + NSStringFromRect(s.window.frame) + " target " + NSStringFromRect(s.targetFrame())
+                      + " card " + NSStringFromSize(s.cardSize) + " maxCardH " + String(Double(s.model.maxCardH))
+                      + " hosting " + NSStringFromRect(s.hosting.frame) + " fitting " + NSStringFromSize(s.hosting.fittingSize))
             PanelController.savePNG(s.hosting, path)
             exit(0)
         }
