@@ -23,3 +23,43 @@ The script copies `Tests/data/sleep.json` and `Tests/data/checkins.csv` (invente
 into a temporary data folder, because some checks read them. `Tests/reference-output.txt` is what the C# checks
 print on that same data. The last line before `ALL PASS` ("your own data: ...") depends on today's date, since the
 sleep-need estimate only looks at the last 60 days, so it may differ from the reference.
+
+# Corner.app: the native Mac app
+
+`CornerApp` (the product `Corner`) is the native macOS app built on `CornerCore`: AppKit for the shell and SwiftUI
+for the card. It runs on macOS 12 or later, as one universal binary for Apple Silicon and Intel.
+
+```sh
+cd swift
+bash package.sh            # out/Corner.app, out/Corner-Mac-Swift.zip, then test renders in out/demo-*.png
+DEMOS=0 bash package.sh    # without the renders
+```
+
+The app is not notarised: the first time, right-click Corner.app and choose Open.
+
+## How it is put together
+
+| File | What is in it |
+| --- | --- |
+| `main.swift` | Start-up: one running copy per data folder (a lock file), no Dock icon, `--demo`, `--icon`, `--peek` |
+| `Panel.swift` | The shell: menu-bar icon and menu, the borderless non-activating panel, the hot corner (polled 60 times a second), showing, hiding and peeking, Full Mode, moving the panel, Cmd + scroll, the timers, the test renders |
+| `Model.swift` | `AppModel`: everything the card shows and does (tasks, timers, prompts, the energy curve, naps, Plan, routines, check-ins, the record), ported from the Windows `Shell` |
+| `CardView.swift` | The card: header, the corner panel and Full Mode bodies, the next task, the row of chips, the add box, the 1-10 check-in, the time's-up box |
+| `TasksView.swift` | The task list: rows, the quick-date strip, the Done bar, drag to reorder |
+| `EnergyView.swift` | The Energy side: the curve, the three sleep figures, the sleep-need hint, the debt calculator, naps, the plan ticket, routines |
+| `SettingsView.swift` | The morning sleep check-in and the Settings page (panel, energy, your record, sleep history) |
+| `Toast.swift` | The energy notices: a card at the panel's corner with `ping.wav` |
+| `Onboard.swift` | The welcome window on the very first start |
+| `Controls.swift` | Shared pieces: glyphs drawn from the Windows path strings, buttons, chips, switches, text boxes, time entry, flow layout |
+| `Theme.swift` | The two skins (Sage and Glass), Gilroy, and the grid of sizes and insets |
+| `Platform.swift` | Idle time, the sound, notifications, Finder, the login item (a LaunchAgent) |
+| `Icon.swift` | The menu-bar icon and the app icon |
+
+Data lives where `CornerCore` puts it (`~/Library/Application Support/Corner`, or `CORNER_DATA`). The panel's
+position on a Mac is kept under its own keys (`MacMoved`, `MacPosX`, `MacPosY`, `MacFullMoved`, ...) so a
+`settings.json` copied from Windows does not put it off screen.
+
+Test renders: `CORNER_DATA=/tmp/x Corner.app/Contents/MacOS/Corner --demo out.png <mode>` fills a throwaway list and
+writes the panel to a PNG. Modes include `tasks`, `all`, `adding`, `energy`, `settings`, `checkin`, `feedback`,
+`timeup`, `debt`, `nap`, `glass`, `rest`, `full`, `fullenergy`, `fullplan`, `fullroutines`, `fullsettings`,
+`onboard0` to `onboard3` and `rise` / `dip` (the notice).

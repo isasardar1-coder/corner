@@ -1,6 +1,6 @@
 // swift-tools-version: 5.9
-// Corner for macOS: the platform-neutral model (CornerCore) and its checks (CornerChecks).
-// An app target (CornerApp, depending on CornerCore) is meant to be added here later.
+// Corner for macOS: the platform-neutral model (CornerCore), its checks (CornerChecks) and the app (CornerApp,
+// product "Corner": AppKit + SwiftUI). See README.md.
 import PackageDescription
 
 let package = Package(
@@ -9,7 +9,7 @@ let package = Package(
     products: [
         .library(name: "CornerCore", targets: ["CornerCore"]),
         .executable(name: "CornerChecks", targets: ["CornerChecks"]),
-        // .executable(name: "CornerApp", targets: ["CornerApp"]),
+        .executable(name: "Corner", targets: ["CornerApp"]),
     ],
     targets: [
         .target(
@@ -21,7 +21,17 @@ let package = Package(
             dependencies: ["CornerCore"],
             path: "Sources/CornerChecks"
         ),
-        // .executableTarget(name: "CornerApp", dependencies: ["CornerCore"], path: "Sources/CornerApp"),
+        .executableTarget(
+            name: "CornerApp",
+            dependencies: ["CornerCore"],
+            path: "Sources/CornerApp",
+            resources: [
+                .copy("Resources/Gilroy-Medium.ttf"),
+                .copy("Resources/Gilroy-SemiBold.ttf"),
+                .copy("Resources/Gilroy-SemiBoldItalic.ttf"),
+                .copy("Resources/ping.wav"),
+            ]
+        ),
     ],
     swiftLanguageVersions: [.v5]
 )
