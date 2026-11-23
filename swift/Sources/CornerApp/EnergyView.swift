@@ -51,13 +51,187 @@ struct CurveTray: View {
         if let f = rest.first { rest = String(f).uppercased() + rest.dropFirst() }
         if e.bedPush >= 5 { rest += (rest.isEmpty ? "" : " · ") + "late nap: wind-down about " + String(Int(e.bedPush.rounded())) + " min later" }
         return CardBox(surface: T.tray) {
-            Text(head).font(m.head(m.sp(18, 16))).foregroundColor(T.text).fixedSize(horizontal: false, vertical: true)
-            if !rest.isEmpty {
-                Text(rest).font(m.font(11.5)).foregroundColor(T.muted).fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 1).padding(.bottom, m.sp(8, 5))
+            // the words on the left; on the right, the curve's value right now as a percentage
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(head).font(m.head(m.sp(18, 16))).foregroundColor(T.text).fixedSize(horizontal: false, vertical: true)
+                    if !rest.isEmpty {
+                        Text(rest).font(m.font(11.5)).foregroundColor(T.muted).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 0)
+                EnergyCounter(now: now)
+            }
+            .padding(.bottom, m.sp(8, 5))
+            if model.feelAsk != nil {
+                FeelAskBox() // after a number was typed into the counter
+            } else if model.feelAfter != nil {
+                FeelAfterBox() // and what may follow from it
             }
             Chart(e: e, now: now)
         }
+    }
+}
+
+/// Energy now, 1 to 100%: the curve's level at this moment, matched to your corrections, with the zone's colour
+/// beside it. Click the number to type how you feel.
+struct EnergyCounter: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.m) var m
+    let now: Date
+    @State private var text = ""
+    @FocusState private var editing: Bool
+
+    var body: some View {
+        let pct: Int = Int(model.energyPct(now))
+        VStack(alignment: .trailing, spacing: 0) {
+            if model.feelEditing {
+                box(pct)
+            } else {
+                number(pct)
+            }
+            HStack(spacing: 4) {
+                Circle().fill(model.zoneColor(now)).frame(width: 6, height: 6).padding(.top, 1)
+                Text("energy").font(m.font(10.5)).foregroundColor(T.muted)
+            }
+        }
+        .fixedSize()
+        .help("Your energy right now. Click the number if it feels different")
+    }
+
+    func number(_ pct: Int) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text(String(pct)).font(m.head(m.sp(22, 19))).foregroundColor(T.text)
+            Text("%").font(m.font(12, true)).foregroundColor(T.muted)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { model.beginFeel() }
+    }
+
+    /// The counter's number as a box to type in: 1 to 100, then Enter. Escape leaves it as it was.
+    func box(_ pct: Int) -> some View {
+        TextField("", text: Binding(get: { text }, set: { v in text = String(v.filter { $0.isNumber || $0 == "%" }.prefix(4)) }),
+                  onCommit: { model.commitFeel(text, shown: pct) })
+            .textFieldStyle(.plain)
+            .font(m.head(m.sp(20, 17)))
+            .foregroundColor(T.text)
+            .multilineTextAlignment(.trailing)
+            .focused($editing)
+            .onExitCommand { model.cancelFeel() }
+            .onAppear {
+                text = String(pct)
+                DispatchQueue.main.async { editing = true }
+            }
+            .onChange(of: editing) { f in
+                if !f && model.feelEditing { model.commitFeel(text, shown: pct) }
+            }
+            .frame(width: m.z(50))
+            .padding(.horizontal, 6)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(T.field))
+            .help("How much energy do you feel you have? 1 to 100, then Enter")
+    }
+}
+
+/// A question with its two (or three) answers, in a white box on the chart's tray.
+struct AskBox: View {
+    @Environment(\.m) var m
+    let title: String
+    let text: String
+    let buttons: [AnyView]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title).font(m.font(12.5, true)).foregroundColor(T.text).fixedSize(horizontal: false, vertical: true)
+            Text(text).font(m.font(11.5)).foregroundColor(T.muted).fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 3).padding(.bottom, m.sp(9, 7))
+            FlowRow(items: buttons, hs: 6, vs: 6)
+        }
+    }
+}
+
+/// Under the chart's heading, after a number was typed into the counter.
+struct FeelAskBox: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.m) var m
+
+    var body: some View {
+        if let a = model.feelAsk {
+            AskBox(title: FeelAskBox.title(a), text: FeelAskBox.how(), buttons: [
+                Btn(text: "Fine-tune the chart", kind: 0, on: 1) { model.feelFineTune() }.any(),
+                Btn(text: "Only the number", kind: 1, on: 1) { model.feelOnlyNumber() }.any(),
+                Btn(text: "Cancel", kind: 2, on: 1) { model.feelCancelAsk() }.any(),
+            ])
+            .modifier(FeelFrame())
+        }
+    }
+
+    static func title(_ a: FeelAsk) -> String {
+        let felt: Int = Int(NetFormat.round(a.felt * 100))
+        return "You feel " + String(felt) + "%. The counter said " + String(a.shown) + "%."
+    }
+
+    static func how() -> String {
+        let have: Int = Tuning.count + 1
+        var how: String = "Fine-tuning also counts as a check-in, so the chart moves toward how you feel at this time of day."
+        if have < Tuning.minRatings {
+            how = "Fine-tuning also counts as a check-in. The chart starts to reshape after " + String(Tuning.minRatings)
+                + " of them (this makes " + String(have) + ")."
+        }
+        return "The counter will match you from now on. " + how
+    }
+}
+
+/// Where the correction box was: the questions that follow from it, each with its own answer.
+struct FeelAfterBox: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.m) var m
+
+    var body: some View {
+        let replan: Bool = model.feelAfter?.replan ?? false
+        let high: TaskItem? = model.feelHighTask()
+        if replan || high != nil {
+            VStack(alignment: .leading, spacing: 0) {
+                if replan { replanAsk }
+                if replan && high != nil {
+                    Rule().padding(.top, 2).padding(.bottom, m.sp(10, 8))
+                }
+                if let t = high { highAsk(t) }
+            }
+            .modifier(FeelFrame())
+        }
+    }
+
+    var replanAsk: some View {
+        AskBox(title: "Your peak and dip moved.",
+               text: "Re-plan the rest of today to the new times above? You'll see the new plan before anything changes.",
+               buttons: [
+                   Btn(text: "Re-plan today", kind: 0, on: 1) { model.feelReplan(true) }.any(),
+                   Btn(text: "Not now", kind: 2, on: 1) { model.feelReplan(false) }.any(),
+               ])
+    }
+
+    func highAsk(_ t: TaskItem) -> some View {
+        let felt: Int = model.feelAfter?.felt ?? 0
+        let text: String = "You feel " + String(felt) + "%. Bring “" + t.title + "” (high effort) forward to now?"
+        return AskBox(title: "You have energy now.", text: text, buttons: [
+            Btn(text: "Move it to now", kind: 0, on: 1) { model.feelMoveHigh(true) }.any(),
+            Btn(text: "Not now", kind: 2, on: 1) { model.feelMoveHigh(false) }.any(),
+        ])
+    }
+}
+
+/// The white box the questions about a typed energy % sit in.
+struct FeelFrame: ViewModifier {
+    @Environment(\.m) var m
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, m.padX)
+            .padding(.top, m.sp(10, 8))
+            .padding(.bottom, m.sp(4, 2))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: m.radius * 0.75, style: .continuous).fill(T.field))
+            .overlay(Rim(radius: m.radius * 0.75))
+            .padding(.bottom, m.sp(10, 8))
     }
 }
 
@@ -534,7 +708,7 @@ struct NapsBlock: View {
                 .padding(.leading, m.padX).padding(.trailing, m.padX - m.sp(6, 5)).padding(.vertical, 3)
                 .background(Capsule().fill(T.field))
             }
-            if model.napOffer && model.full {
+            if model.napOffer && model.full && !AppModel.priorityMode {
                 HStack(spacing: 4) {
                     Text("Re-plan what hasn't started?").font(m.font(11.5)).foregroundColor(T.muted)
                     Spacer(minLength: 0)
@@ -555,70 +729,109 @@ struct PlanTicket: View {
     let e: EnergyDay
 
     var body: some View {
-        let name = (model.proposal == nil ? "Today's plan" : "Proposed plan").uppercased()
-        let r = m.radius
-        let now = AppModel.now()
-        let planEnd = Planner.until(e, now)
-        let window = now >= planEnd ? "Too close to bedtime to plan"
-            : "Plans from " + (now < e.wake ? EnergyDay.clock(e.wake) : "now") + " to " + EnergyDay.clock(planEnd)
-        let nameW = Fonts.width(name, m.z(10), true)
-        let p = model.proposal
-        let placedAny = p?.contains { $0.placed } ?? false
+        // "Plan by: Priority" (Settings): what comes after what, with no clock times
+        let prio: Bool = AppModel.priorityMode
+        let name: String = PlanTicket.name(prio, model).uppercased()
+        let r: CGFloat = m.radius
+        let nameW: CGFloat = Fonts.width(name, m.z(10), true)
+        let placed: Bool = model.proposal?.contains { $0.placed } ?? false
+        let key: Bool = placed && !prio
         return HStack(alignment: .top, spacing: 0) {
-            // the strip, its name running up it
-            ZStack(alignment: .top) {
-                Color.clear
-                Text(name).font(m.font(10, true)).foregroundColor(T.onAccent).fixedSize()
-                    .frame(width: nameW, height: 14)
-                    .rotationEffect(.degrees(-90))
-                    .frame(width: 14, height: nameW)
-                    .padding(.top, 14)
-            }
-            .frame(width: 30)
-            .frame(maxHeight: .infinity)
-            .background(T.accent)
+            PlanStrip(name: name, nameW: nameW)
             VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(alignment: .top, spacing: 0) {
-                        Text(window).font(m.font(11.5)).foregroundColor(T.muted).fixedSize(horizontal: false, vertical: true)
-                            .padding(.trailing, 10).padding(.top, 5)
-                        Spacer(minLength: 0)
-                        HStack(spacing: 4) {
-                            if p == nil {
-                                if model.planUndo != nil { Btn(text: "Undo plan", kind: 2, on: 1) { model.undoPlan() } }
-                                Btn(text: "Plan my day", kind: 0, on: 1) { model.makePlan() }
-                            } else {
-                                Btn(text: "Discard", kind: 2, on: 1) { model.proposal = nil; model.changed() }
-                                if placedAny { Btn(text: "Apply", kind: 0, on: 1) { model.applyPlan() } }
-                            }
-                        }
-                    }
-                    .padding(.bottom, 6)
-                    if let p = p { PlanRows(p: p, planEnd: planEnd) }
+                Group {
+                    if prio { OrderPlan() } else { SchedulePlan(e: e) }
                 }
                 .padding(.horizontal, m.padX).padding(.vertical, m.padY)
                 Spacer(minLength: 0)
-                if placedAny {
-                    HStack(spacing: 0) {
-                        ForEach(0..<3, id: \.self) { i in
-                            let names = ["on a peak", "in the dip", "between"]
-                            let fills = [T.accent, T.strong, T.ctl]
-                            RoundedRectangle(cornerRadius: 2.5).fill(fills[i])
-                                .overlay(RoundedRectangle(cornerRadius: 2.5).stroke(T.muted, lineWidth: i == 1 ? 0 : 0.75))
-                                .frame(width: 5, height: 11).padding(.trailing, 5)
-                            Text(names[i]).font(m.font(10)).foregroundColor(T.muted).padding(.trailing, 12)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, m.padX).padding(.top, 6).padding(.bottom, 7)
-                    .background(T.soft)
-                }
+                if key { PlanKey() }
             }
         }
         .frame(minHeight: nameW + 26)
         .background(T.field)
         .clipShape(RoundedRectangle(cornerRadius: r, style: .continuous))
         .overlay(Rim(radius: r))
+    }
+
+    static func name(_ prio: Bool, _ model: AppModel) -> String {
+        if prio { return model.orderProposal == nil ? "Today's plan" : "Proposed order" }
+        return model.proposal == nil ? "Today's plan" : "Proposed plan"
+    }
+}
+
+/// The ticket's lime strip, its name running up it.
+struct PlanStrip: View {
+    @Environment(\.m) var m
+    let name: String
+    let nameW: CGFloat
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            Color.clear
+            Text(name).font(m.font(10, true)).foregroundColor(T.onAccent).fixedSize()
+                .frame(width: nameW, height: 14)
+                .rotationEffect(.degrees(-90))
+                .frame(width: 14, height: nameW)
+                .padding(.top, 14)
+        }
+        .frame(width: 30)
+        .frame(maxHeight: .infinity)
+        .background(T.accent)
+    }
+}
+
+/// The key to the ticks of a proposed schedule, in the ticket's foot.
+struct PlanKey: View {
+    @Environment(\.m) var m
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(0..<3, id: \.self) { i in
+                let names = ["on a peak", "in the dip", "between"]
+                let fills = [T.accent, T.strong, T.ctl]
+                RoundedRectangle(cornerRadius: 2.5).fill(fills[i])
+                    .overlay(RoundedRectangle(cornerRadius: 2.5).stroke(T.muted, lineWidth: i == 1 ? 0 : 0.75))
+                    .frame(width: 5, height: 11).padding(.trailing, 5)
+                Text(names[i]).font(m.font(10)).foregroundColor(T.muted).padding(.trailing, 12)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, m.padX).padding(.top, 6).padding(.bottom, 7)
+        .background(T.soft)
+    }
+}
+
+/// Plan by schedule: the time Plan fills and its buttons, then the proposed tasks with their start times.
+struct SchedulePlan: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.m) var m
+    let e: EnergyDay
+
+    var body: some View {
+        let now = AppModel.now()
+        let planEnd: Date = Planner.until(e, now)
+        let from: String = now < e.wake ? EnergyDay.clock(e.wake) : "now"
+        let window: String = now >= planEnd ? "Too close to bedtime to plan" : "Plans from " + from + " to " + EnergyDay.clock(planEnd)
+        let p: [PlanItem]? = model.proposal
+        let placedAny: Bool = p?.contains { $0.placed } ?? false
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 0) {
+                Text(window).font(m.font(11.5)).foregroundColor(T.muted).fixedSize(horizontal: false, vertical: true)
+                    .padding(.trailing, 10).padding(.top, 5)
+                Spacer(minLength: 0)
+                HStack(spacing: 4) {
+                    if p == nil {
+                        if model.planUndo != nil { Btn(text: "Undo plan", kind: 2, on: 1) { model.undoPlan() } }
+                        Btn(text: "Plan my day", kind: 0, on: 1) { model.makePlan() }
+                    } else {
+                        Btn(text: "Discard", kind: 2, on: 1) { model.discardPlan() }
+                        if placedAny { Btn(text: "Apply", kind: 0, on: 1) { model.applyPlan() } }
+                    }
+                }
+            }
+            .padding(.bottom, 6)
+            if let items = p { PlanRows(p: items, planEnd: planEnd) }
+        }
     }
 }
 
@@ -629,17 +842,9 @@ struct PlanRows: View {
     let planEnd: Date
 
     var body: some View {
-        let why: String? = {
-            if p.isEmpty {
-                return model.data.tasks.contains { !$0.done }
-                    ? "Nothing to plan: your open tasks either have a time you set or belong to a later day. Clear a task's time to let Plan place it."
-                    : "Nothing to plan yet: add a few tasks first, with an effort level (!high, !med, !low) and a length (45m)."
-            }
-            if !p.contains(where: { $0.placed }) { return "None of these fit before " + EnergyDay.clock(planEnd) + ". Shorten them, or plan again tomorrow." }
-            return nil
-        }()
-        let timeW = Fonts.width(EnergyDay.use12 ? "12:00pm" : "00:00", m.z(11.5), true) + 10
-        let items = p.sorted { a, b in
+        let why: String? = note()
+        let timeW: CGFloat = Fonts.width(EnergyDay.use12 ? "12:00pm" : "00:00", m.z(11.5), true) + 10
+        let items: [PlanItem] = p.sorted { a, b in
             if a.placed != b.placed { return a.placed }
             return a.start < b.start
         }
@@ -647,26 +852,167 @@ struct PlanRows: View {
             if let w = why {
                 Text(w).font(m.font(12)).foregroundColor(T.muted).fixedSize(horizontal: false, vertical: true).padding(.bottom, 4)
             }
-            ForEach(items, id: \.id) { it in
+            ForEach(Array(items.enumerated()), id: \.offset) { pair in
+                PlanRowView(it: pair.element, timeW: timeW)
+            }
+        }
+    }
+
+    func note() -> String? {
+        if p.isEmpty {
+            let anyOpen: Bool = model.data.tasks.contains { !$0.done }
+            return anyOpen
+                ? "Nothing to plan: your open tasks either have a time you set or belong to a later day. Clear a task's time to let Plan place it."
+                : "Nothing to plan yet: add a few tasks first, with an effort level (!high, !med, !low) and a length (45m)."
+        }
+        let placedAny: Bool = p.contains { $0.placed }
+        if !placedAny { return "None of these fit before " + EnergyDay.clock(planEnd) + ". Shorten them, or plan again tomorrow." }
+        return nil
+    }
+}
+
+/// One task of the proposed schedule: the zone's tick, its start, the task, and its effort and length. Under a
+/// high task that could go on both peaks as two sessions: the offer to split it.
+struct PlanRowView: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.m) var m
+    let it: PlanItem
+    let timeW: CGFloat
+
+    var body: some View {
+        let title: String = it.splitOf > 0 ? AppModel.splitTitle(it.title, it.splitOf) : it.title
+        let ask: Bool = (it.canSplit && !model.planKeep.contains(it.id)) || it.splitOf == 1
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 0) {
+                RoundedRectangle(cornerRadius: 2).fill(it.placed ? model.zoneColor(it.start) : T.ctl).frame(width: 4, height: 14)
+                    .frame(width: 12, alignment: .leading)
+                Text(it.placed ? EnergyDay.clock(it.start) : "—").font(m.font(11.5, true)).foregroundColor(it.placed ? T.text : T.faint)
+                    .frame(width: timeW, alignment: .leading)
+                Text(title).font(m.font(12)).foregroundColor(it.placed ? T.text : T.muted).lineLimit(1).truncationMode(.tail)
+                Spacer(minLength: 0)
+                Text(it.placed ? tags() : "no room today").font(m.font(10.5)).foregroundColor(T.muted).padding(.leading, 8).lineLimit(1).fixedSize()
+            }
+            .padding(.top, 3).padding(.bottom, 4)
+            if ask { SplitAsk(it: it) }
+        }
+    }
+
+    func tags() -> String {
+        var bits: [String] = []
+        if let s = TaskTags.short(it.level) { bits.append(s) }
+        if it.physical { bits.append("phys") }
+        bits.append(TaskTags.len(it.minutes))
+        return bits.joined(separator: " · ")
+    }
+}
+
+/// Under a high task's row in the proposed plan: split it across both peaks, or keep it as one session?
+struct SplitAsk: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.m) var m
+    let it: PlanItem
+
+    var body: some View {
+        Group {
+            if it.splitOf == 1 { done } else { offer }
+        }
+        .padding(.leading, 10).padding(.trailing, 8).padding(.top, 7).padding(.bottom, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(T.soft))
+        .padding(.leading, 12).padding(.top, 1).padding(.bottom, 6)
+    }
+
+    /// Already split: one line, with the way back.
+    var done: some View {
+        let id: String = it.id
+        return HStack(spacing: 8) {
+            Text("Split across both peaks.").font(m.font(11.5)).foregroundColor(T.muted)
+            Spacer(minLength: 0)
+            Btn(text: "Keep as one", kind: 2, on: 1) { model.splitInPlan(id, false) }
+        }
+    }
+
+    var offer: some View {
+        let id: String = it.id
+        let msg: String = it.placed
+            ? "Doesn't fit in what's left of your first peak as one session, so it went to " + EnergyDay.clock(it.start) + ". Split it in two instead?"
+            : "No room for it as one session. Split it in two?"
+        let first: String = TaskTags.len(it.splitA) + " at " + EnergyDay.clock(it.splitAt1)
+        let second: String = TaskTags.len(it.splitB) + " at " + EnergyDay.clock(it.splitAt2)
+        return VStack(alignment: .leading, spacing: 0) {
+            Text(msg).font(m.font(11.5)).foregroundColor(T.text).fixedSize(horizontal: false, vertical: true)
+            Text(first + "  ·  " + second).font(m.font(11, true)).foregroundColor(T.muted).padding(.top, 2)
+            HStack(spacing: 4) {
+                Spacer(minLength: 0)
+                Btn(text: "Keep as one", kind: 2, on: 1) { model.splitInPlan(id, false) }
+                Btn(text: "Split in two", kind: 0, on: 1) { model.splitInPlan(id, true) }
+            }
+            .padding(.top, 6)
+        }
+    }
+}
+
+/// Plan by priority: what comes after what, each with its reason. No clock times.
+struct OrderPlan: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.m) var m
+
+    var body: some View {
+        let p: [Ranked]? = model.orderProposal
+        let hasRows: Bool = !(p?.isEmpty ?? true)
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 0) {
+                Text("Puts today's tasks in order for your energy now").font(m.font(11.5)).foregroundColor(T.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.trailing, 10).padding(.top, 5)
+                Spacer(minLength: 0)
+                HStack(spacing: 4) {
+                    if p == nil {
+                        if model.orderToday { Btn(text: "Undo plan", kind: 2, on: 1) { model.undoOrder() } }
+                        Btn(text: "Plan my day", kind: 0, on: 1) { model.makePlan() }
+                    } else {
+                        Btn(text: "Discard", kind: 2, on: 1) { model.discardOrder() }
+                        if hasRows { Btn(text: "Apply", kind: 0, on: 1) { model.applyOrder() } }
+                    }
+                }
+            }
+            .padding(.bottom, p == nil ? 0 : 6)
+            if let items = p { OrderRows(p: items) }
+        }
+    }
+}
+
+struct OrderRows: View {
+    @Environment(\.m) var m
+    let p: [Ranked]
+
+    var body: some View {
+        let numW: CGFloat = Fonts.width("00", m.z(11.5), true) + 8
+        return VStack(alignment: .leading, spacing: 0) {
+            if p.isEmpty {
+                Text("Nothing to order yet: add a few tasks first, with an effort level (!high, !med, !low) and a length (45m).")
+                    .font(m.font(12)).foregroundColor(T.muted).fixedSize(horizontal: false, vertical: true).padding(.bottom, 4)
+            }
+            ForEach(Array(p.enumerated()), id: \.offset) { pair in
                 HStack(spacing: 0) {
-                    RoundedRectangle(cornerRadius: 2).fill(it.placed ? model.zoneColor(it.start) : T.ctl).frame(width: 4, height: 14)
-                        .frame(width: 12, alignment: .leading)
-                    Text(it.placed ? EnergyDay.clock(it.start) : "—").font(m.font(11.5, true)).foregroundColor(it.placed ? T.text : T.faint)
-                        .frame(width: timeW, alignment: .leading)
-                    Text(it.title).font(m.font(12)).foregroundColor(it.placed ? T.text : T.muted).lineLimit(1).truncationMode(.tail)
+                    Text(String(pair.offset + 1)).font(m.font(11.5, true)).foregroundColor(T.text)
+                        .frame(width: numW, alignment: .leading)
+                    Text(pair.element.task.title).font(m.font(12)).foregroundColor(T.text).lineLimit(1).truncationMode(.tail)
                     Spacer(minLength: 0)
-                    Text(it.placed ? tags(it) : "no room today").font(m.font(10.5)).foregroundColor(T.muted).padding(.leading, 8).lineLimit(1).fixedSize()
+                    Text(OrderRows.tag(pair.element)).font(m.font(10.5)).foregroundColor(T.muted)
+                        .padding(.leading, 8).lineLimit(1).fixedSize()
                 }
                 .padding(.top, 3).padding(.bottom, 4)
             }
         }
     }
 
-    func tags(_ it: PlanItem) -> String {
+    /// Why it stands where it does; or, with no reason to give, its effort and length.
+    static func tag(_ it: Ranked) -> String {
+        if let w = it.why { return w }
         var bits: [String] = []
-        if let s = TaskTags.short(it.level) { bits.append(s) }
-        if it.physical { bits.append("phys") }
-        bits.append(TaskTags.len(it.minutes))
+        if let lv = TaskTags.level(it.task.energy), let s = TaskTags.short(lv) { bits.append(s) }
+        bits.append(TaskTags.len(AppModel.durationMin(it.task)))
         return bits.joined(separator: " · ")
     }
 }

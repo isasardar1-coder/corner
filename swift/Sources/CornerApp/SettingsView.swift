@@ -69,10 +69,11 @@ struct SettingsPage: View {
             .padding(.leading, m.padX)
             if model.full {
                 HStack(alignment: .top, spacing: 2 * m.sideMid) {
-                    VStack(alignment: .leading, spacing: m.gapY) { PanelSettings() }.frame(maxWidth: .infinity)
+                    VStack(alignment: .leading, spacing: m.gapY) { PlanningSettings(); PanelSettings() }.frame(maxWidth: .infinity)
                     VStack(alignment: .leading, spacing: m.gapY) { EnergySettings(); RecordCard(); SleepHistory() }.frame(maxWidth: .infinity)
                 }
             } else {
+                PlanningSettings()
                 PanelSettings()
                 EnergySettings()
                 RecordCard()
@@ -105,6 +106,50 @@ struct SetCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: m.radius, style: .continuous).fill(T.field))
         .overlay(Rim(radius: m.radius))
+    }
+}
+
+/// First on the page: plan by schedule or by priority, the stopwatch, and the work log.
+struct PlanningSettings: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.m) var m
+
+    var body: some View {
+        let prio: Bool = AppModel.priorityMode
+        var lines: [AnyView] = [planBy(prio)]
+        if prio { lines.append(stopwatch()) }
+        lines.append(workLog())
+        return Group {
+            SetCaps(text: "Planning")
+            SetCard(lines: lines)
+        }
+    }
+
+    func planBy(_ prio: Bool) -> AnyView {
+        let sub: String = prio ? "What to do next, in order, for your energy now. No clock times." : "A clock time for each task, and a countdown."
+        return SettingLine(title: "Plan by", sub: sub) {
+            Segmented(names: ["Schedule", "Priority"], chosen: prio ? 1 : 0) { i in model.setPlanBy(i) }
+        }.any()
+    }
+
+    func stopwatch() -> AnyView {
+        let watch: Bool = model.showWatch
+        return SettingLine(title: "Show stopwatch", sub: "The time on a task is logged either way") {
+            Toggle2(on: watch) { model.setShowWatch(!watch) }
+        }.any()
+    }
+
+    func workLog() -> AnyView {
+        let n: Int = WorkLog.rows.count
+        var sub: String = "Nothing yet. "
+        if n > 0 { sub = String(n) + (n == 1 ? " stretch" : " stretches") + " of work. " }
+        sub += "work.csv, in Corner's folder. It opens in Numbers."
+        return SettingLine(title: "Work log", sub: sub) {
+            Btn(text: "Show", kind: 1, on: 1) {
+                let f: String = WorkLog.file
+                Platform.reveal(FileManager.default.fileExists(atPath: f) ? f : TaskLog.folder)
+            }
+        }.any()
     }
 }
 
@@ -180,25 +225,36 @@ struct EnergySettings: View {
             ? String(Tuning.count) + " of " + String(Tuning.minRatings) + " check-ins so far"
             : (tune ? "Curve adjusted from " : "Off · ") + String(Tuning.count) + " check-ins"
         let prayer = Settings.get("PrayerOn", 0) > 0.5
+        var lines: [AnyView] = [
+            SettingLine(title: "Clock") {
+                Segmented(names: ["24h", "am/pm"], chosen: EnergyDay.use12 ? 1 : 0) { i in
+                    Settings.set("Clock12", Double(i)); model.refreshEnergy(opening: false)
+                }
+            }.any(),
+            SettingLine(title: "Tuning", sub: status) {
+                Toggle2(on: tune) { Settings.set("Tune", tune ? 0 : 1); model.refreshEnergy(opening: false) }
+            }.any(),
+        ]
+        // the energy % typed over the counter: how many corrections it is matched to, and the way back
+        let feels: Int = Calibration.count(AppModel.now())
+        if feels > 0 { lines.append(feelLine(feels)) }
+        lines.append(VStack(alignment: .leading, spacing: 0) {
+            SettingLine(title: "I usually wake for Fajr", sub: prayer ? nil : "Fills in the split when you enter last night's sleep") {
+                Toggle2(on: prayer) { Settings.set("PrayerOn", prayer ? 0 : 1); model.changed() }
+            }
+            if prayer { PrayerRow() }
+        }.any())
         return Group {
             SetCaps(text: "Energy")
-            SetCard(lines: [
-                SettingLine(title: "Clock") {
-                    Segmented(names: ["24h", "am/pm"], chosen: EnergyDay.use12 ? 1 : 0) { i in
-                        Settings.set("Clock12", Double(i)); model.refreshEnergy(opening: false)
-                    }
-                }.any(),
-                SettingLine(title: "Tuning", sub: status) {
-                    Toggle2(on: tune) { Settings.set("Tune", tune ? 0 : 1); model.refreshEnergy(opening: false) }
-                }.any(),
-                VStack(alignment: .leading, spacing: 0) {
-                    SettingLine(title: "I usually wake for Fajr", sub: prayer ? nil : "Fills in the split when you enter last night's sleep") {
-                        Toggle2(on: prayer) { Settings.set("PrayerOn", prayer ? 0 : 1); model.changed() }
-                    }
-                    if prayer { PrayerRow() }
-                }.any(),
-            ])
+            SetCard(lines: lines)
         }
+    }
+
+    func feelLine(_ feels: Int) -> AnyView {
+        let sub: String = "Matched to " + String(feels) + (feels == 1 ? " correction" : " corrections") + " you typed in"
+        return SettingLine(title: "Energy %", sub: sub) {
+            Btn(text: "Reset", kind: 1, on: 1) { model.resetFeel() }
+        }.any()
     }
 }
 

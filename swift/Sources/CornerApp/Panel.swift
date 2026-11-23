@@ -71,6 +71,7 @@ final class PanelController: NSObject, NSMenuDelegate {
     var toast: ToastController? = nil
     var onboard: OnboardController? = nil
     var timers: [Timer] = []
+    var awayTokens: [NSObjectProtocol] = []
 
     init(model: AppModel) {
         self.model = model
@@ -120,10 +121,33 @@ final class PanelController: NSObject, NSMenuDelegate {
 
         NotificationCenter.default.addObserver(self, selector: #selector(windowMoved), name: NSWindow.didMoveNotification, object: window)
         NotificationCenter.default.addObserver(self, selector: #selector(screensChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        watchAway()
 
         if firstRun && (!test || ProcessInfo.processInfo.environment["CORNER_ONBOARD"] == "1") { showOnboarding() }
         else if peek { showPanel(peekMs: 6000) }
         model.checkReminders()
+    }
+
+    /// The Mac going to sleep, its screen going dark or locking, or another user taking the screen: the task being
+    /// worked on is paused there and then (the idle check in AppModel.workTick covers walking away).
+    func watchAway() {
+        let ws = NSWorkspace.shared.notificationCenter
+        let names: [Notification.Name] = [
+            NSWorkspace.willSleepNotification,
+            NSWorkspace.screensDidSleepNotification,
+            NSWorkspace.sessionDidResignActiveNotification,
+        ]
+        for n in names {
+            let token = ws.addObserver(forName: n, object: nil, queue: OperationQueue.main) { [weak self] _ in
+                self?.model.autoPause(Date())
+            }
+            awayTokens.append(token)
+        }
+        let locked = Notification.Name("com.apple.screenIsLocked")
+        let token = DistributedNotificationCenter.default().addObserver(forName: locked, object: nil, queue: OperationQueue.main) { [weak self] _ in
+            self?.model.autoPause(Date())
+        }
+        awayTokens.append(token)
     }
 
     func buildWindow() {
@@ -550,7 +574,8 @@ final class PanelController: NSObject, NSMenuDelegate {
         model.whenOpenId = model.data.tasks[2].id
         model.data.tasks[3].setDue(Date().dateOnly.addingDays(-1), hasTime: false)
         model.input = "Dentist nov 30 at 2pm"
-        let full = mode.hasPrefix("full") || ProcessInfo.processInfo.environment["CORNER_FULL"] == "1"
+        let fullOnly = mode == "order" || mode == "planning" // these two are of Full Mode
+        let full = fullOnly || mode.hasPrefix("full") || ProcessInfo.processInfo.environment["CORNER_FULL"] == "1"
         if mode.hasPrefix("full") { mode = String(mode.dropFirst(4)); if mode.isEmpty { mode = "tasks" } }
         let rest = mode.hasPrefix("rest")
         if rest && mode.count > 4 { mode = String(mode.dropFirst(4)) }
@@ -576,7 +601,10 @@ final class PanelController: NSObject, NSMenuDelegate {
 
     func demoSeed(_ mode: String) {
         if mode == "prompt" { model.promptOnly = true }
-        if mode == "plan" || mode == "applied" {
+        let byPriority = mode == "priority" || mode == "paused" || mode == "order" || mode == "planning"
+        if byPriority { Settings.set("PlanBy", 1) }
+        if mode == "habits" { demoHabits() }
+        if mode == "plan" || mode == "applied" || mode == "priority" || mode == "paused" || mode == "order" {
             for s in ["Tidy desk", "Anki insertion !low 20m", "Review animation !med", "Emails !low", "Write concept 14 !high 45m"] {
                 model.input = s
                 model.addTask()
@@ -618,8 +646,43 @@ final class PanelController: NSObject, NSMenuDelegate {
             if let t = model.upcoming().first { model.startTimer(t); model.timeUp() }
         case "nextup":
             if let t = model.upcoming().first { model.completeTask(t) }
+        case "priority", "paused":
+            // by priority: the list in order, the first task worked on for 12:34 (and then paused)
+            model.resortData()
+            model.allOpen = true
+            if let t = model.upcoming().first {
+                model.startTimer(t)
+                model.workStart = model.workStart.addingTimeInterval(-754)
+                if mode == "paused" { model.timerClick(t) }
+            }
+        case "order": model.makePlan()
+        case "habits": model.addOpen = true
+        case "planning": model.toggleSettings()
         default: break
         }
         model.changed()
+    }
+
+    /// Test renders: a work log in which three things were done at this time of day on the last few days.
+    func demoHabits() {
+        let now = AppModel.now()
+        let hours: [Double] = [9, 12.5, 15, 19]
+        let hour: Double = hours[Habits.part(now)]
+        let names: [String] = ["Read 20 pages", "Clear the inbox", "Walk"]
+        let mins: [Double] = [25, 40, 15]
+        let efforts: [String?] = ["medium", "low", nil]
+        for d in 1...4 {
+            let day: Date = now.dateOnly.addingDays(-d)
+            for k in 0..<names.count {
+                if k == 2 && d == 4 { continue }
+                let start: Date = day.addingHours(hour).addingMinutes(Double(k) * 20)
+                let r = WorkRow(start: start, end: start.addingMinutes(mins[k]), minutes: mins[k], id: "demo" + String(k), title: names[k])
+                r.effort = efforts[k]
+                r.kind = k == 2 ? "physical" : "mental"
+                r.ended = "completed"
+                r.planned = Int(mins[k])
+                WorkLog.add(r)
+            }
+        }
     }
 }

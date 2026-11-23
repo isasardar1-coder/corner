@@ -44,10 +44,11 @@ The app is not notarised: the first time, right-click Corner.app and choose Open
 | `main.swift` | Start-up: one running copy per data folder (a lock file), no Dock icon, `--demo`, `--icon`, `--peek` |
 | `Panel.swift` | The shell: menu-bar icon and menu, the borderless non-activating panel, the hot corner (polled 60 times a second), showing, hiding and peeking, Full Mode, moving the panel, Cmd + scroll, the timers, the test renders |
 | `Model.swift` | `AppModel`: everything the card shows and does (tasks, timers, prompts, the energy curve, naps, Plan, routines, check-ins, the record), ported from the Windows `Shell` |
-| `CardView.swift` | The card: header, the corner panel and Full Mode bodies, the next task, the row of chips, the add box, the 1-10 check-in, the time's-up box |
-| `TasksView.swift` | The task list: rows, the quick-date strip, the Done bar, drag to reorder |
-| `EnergyView.swift` | The Energy side: the curve, the three sleep figures, the sleep-need hint, the debt calculator, naps, the plan ticket, routines |
-| `SettingsView.swift` | The morning sleep check-in and the Settings page (panel, energy, your record, sleep history) |
+| `WorkModel.swift` | More of `AppModel`, ported from the `Shell` half of `Work.cs` and `EnergyFeel.cs`: Plan by Schedule / Priority and the stopwatch, the work log (`work.csv`), the pause when the Mac sleeps, locks or sits idle, the order by priority, the habit chips, the energy % you can type over |
+| `CardView.swift` | The card: header, the corner panel and Full Mode bodies, the next task and its timer (a countdown, or by priority a stopwatch), the row of chips, the add box with the habit chips under it, the 1-10 check-in, the time's-up box |
+| `TasksView.swift` | The task list: rows (the circle carries a tick on the task being worked on), the quick-date strip, the Done bar, drag to reorder |
+| `EnergyView.swift` | The Energy side: the curve with the energy % (click it to type how you feel), the three sleep figures, the sleep-need hint, the debt calculator, naps, the plan ticket (a schedule with the split-task offer, or an order by priority), routines |
+| `SettingsView.swift` | The morning sleep check-in and the Settings page (planning, panel, energy, your record, sleep history) |
 | `Toast.swift` | The energy notices: a card at the panel's corner with `ping.wav` |
 | `Onboard.swift` | The welcome window on the very first start |
 | `Controls.swift` | Shared pieces: glyphs drawn from the Windows path strings, buttons, chips, switches, text boxes, time entry, flow layout |
@@ -62,4 +63,6 @@ position on a Mac is kept under its own keys (`MacMoved`, `MacPosX`, `MacPosY`, 
 Test renders: `CORNER_DATA=/tmp/x Corner.app/Contents/MacOS/Corner --demo out.png <mode>` fills a throwaway list and
 writes the panel to a PNG. Modes include `tasks`, `all`, `adding`, `energy`, `settings`, `checkin`, `feedback`,
 `timeup`, `debt`, `nap`, `glass`, `rest`, `full`, `fullenergy`, `fullplan`, `fullroutines`, `fullsettings`,
-`onboard0` to `onboard3` and `rise` / `dip` (the notice).
+`priority` (Plan by Priority, a task worked on for 12:34), `paused` (the same, then paused), `order` (Full Mode, a
+proposed order), `habits` (the chips under the add box), `planning` (Full Mode settings, the Planning card),
+`onboard0` to `onboard3` and `rise` / `dip` (the notice). A test render never pauses a task for being idle.

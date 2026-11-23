@@ -22,6 +22,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Quitting ends the stretch of work that is open: its row of work.csv says "closed".
+    func applicationWillTerminate(_ notification: Notification) {
+        if demo == nil { model.closeWork() }
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { return false }
 }
 

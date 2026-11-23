@@ -149,6 +149,7 @@ struct TaskRow: View {
         let rowH = m.sp(34, 26)
         let ck = m.sp(18, 15)
         let timed = model.timerId == t.id && !t.done
+        let worked = model.workedOn(t)
         let showHover = (hot && !dragging) || (dragging && model.dragging && hot)
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 0) {
@@ -158,6 +159,9 @@ struct TaskRow: View {
                     Circle().stroke(t.done ? T.ctl : T.text, lineWidth: 1.5)
                     if t.done {
                         Circle().fill(T.ctl)
+                        Glyph(d: "M5,9.4 L7.9,12.2 L13.2,6.2", color: T.text, th: 1.8, w: 18, h: 18)
+                    } else if worked {
+                        // being worked on: the circle carries a tick, so the one control says "completed"
                         Glyph(d: "M5,9.4 L7.9,12.2 L13.2,6.2", color: T.text, th: 1.8, w: 18, h: 18)
                     }
                 }
@@ -169,6 +173,7 @@ struct TaskRow: View {
                 .contentShape(Rectangle())
                 .onHover { boxHot = $0 }
                 .onTapGesture { model.toggleDone(t) }
+                .help(worked ? "Completed" : "")
 
                 // the title, or the box it is edited in
                 Group {
@@ -254,20 +259,24 @@ struct DueChip: View {
     let rowHot: Bool
 
     var body: some View {
+        // by priority nothing is "overdue", and a time an old schedule gave a task is not shown
+        let prio: Bool = AppModel.priorityMode
+        let overdue: Bool = t.overdue && !prio
+        let shown: Date? = prio && t.planned ? nil : t.dueAt
         HStack(spacing: 0) {
             if t.routine != nil {
                 Text("↻").font(m.font(11.5)).foregroundColor(T.faint).padding(.trailing, 3).padding(.bottom, 2)
             }
             EnergyTag(t: t, rowHot: rowHot)
-            if let due = t.dueAt {
-                let today = due.dateOnly == Date().dateOnly
-                let b: Color = t.overdue ? T.danger : (today ? T.text : T.muted)
+            if let due = shown {
+                let today = due.dateOnly <= Date().dateOnly
+                let b: Color = overdue ? T.danger : (today ? T.text : T.muted)
                 if t.hasTime { Glyph(d: Icons.bell, color: b, th: 1, w: 10, h: 10.5).padding(.trailing, 4).padding(.top, 1) }
-                let label = whenLabel(due)
-                let txt = Text(label).font(t.overdue ? Fonts.lean(m.z(11.5)) : m.font(11.5)).foregroundColor(b)
-                if t.overdue || today {
+                let label = whenLabel(due, overdue)
+                let txt = Text(label).font(overdue ? Fonts.lean(m.z(11.5)) : m.font(11.5)).foregroundColor(b)
+                if overdue || today {
                     txt.padding(.horizontal, 8).padding(.top, 2).padding(.bottom, 3)
-                        .background(Capsule().fill(t.overdue ? T.dangerSoft : T.soft))
+                        .background(Capsule().fill(overdue ? T.dangerSoft : T.soft))
                 } else {
                     txt.padding(.trailing, 2)
                 }
@@ -281,9 +290,9 @@ struct DueChip: View {
         .onTapGesture { model.toggleWhen(t) }
     }
 
-    func whenLabel(_ due: Date) -> String {
+    func whenLabel(_ due: Date, _ overdue: Bool) -> String {
         var when = When.label(due, hasTime: t.hasTime)
-        if t.overdue {
+        if overdue {
             if due.dateOnly == Date().dateOnly { when = EnergyDay.clock(due) }
             else if when.hasPrefix("Yesterday") { when = "y" + when.dropFirst() }
             when = "Overdue · " + when

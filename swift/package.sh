@@ -55,7 +55,7 @@ ls -la out
 [ "${DEMOS:-1}" = "0" ] && exit 0
 
 # test renders: each mode starts from an empty data folder
-MODES="${DEMO_MODES:-tasks all adding energy settings checkin feedback timeup debt nap glass rest full fullenergy fullplan fullapplied fullroutines fullsettings onboard0 onboard1 onboard2 onboard3 rise}"
+MODES="${DEMO_MODES:-tasks all adding energy settings checkin feedback timeup debt nap glass rest full fullenergy fullplan fullapplied fullroutines fullsettings priority paused order habits planning onboard0 onboard1 onboard2 onboard3 rise}"
 fail=0
 for mode in $MODES; do
   data="$(mktemp -d)"

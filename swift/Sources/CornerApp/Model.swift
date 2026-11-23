@@ -68,7 +68,11 @@ final class AppModel: ObservableObject {
 
     // ---- plan and routines
     var proposal: [PlanItem]? = nil
-    var planUndo: [(id: String, due: String?, hasTime: Bool, notified: Bool, planned: Bool)]? = nil
+    var planUndo: [PlanUndo]? = nil
+    var planSplit = Set<String>()   // tasks the user chose to split across both peaks in the shown plan
+    var planKeep = Set<String>()    // and those they chose to keep as one session (no more asking)
+    var planKeepStarted = false
+    var planOrder: [String]? = nil  // the list order the last applied plan replaced
     var routinesOpen = false
     var maxCardH: CGFloat = 600  // the tallest the card may be on this screen (set by the shell)
     var editRoutine: String? = nil
@@ -87,6 +91,24 @@ final class AppModel: ObservableObject {
     var lastTimerTick = Date()
     var alertKind = 0       // 0 none, 1 time's up, 2 ready for the next one?
     var alertTaskId: String? = nil
+
+    // ---- the work log, the order by priority, habits and the typed energy % (WorkModel.swift)
+    var workId: String? = nil       // the task whose stretch of work is open
+    var workStart = Date()
+    var workE0: Double = -1
+    var workFelt: Double = -1
+    var workWhy: String? = nil      // why the open stretch is about to end, when the code that ends it knows
+    var rankWhy: [String: String] = [:] // from the last ordering: task id -> why
+    var orderProposal: [Ranked]? = nil  // shown in the plan card, not yet applied
+    var orderUndo: [String]? = nil      // the list order the applied one replaced
+    var habitCache: [Habits.Habit]? = nil
+    var habitRows = -1
+    var habitPart = -1
+    var habitDay = Date.distantPast
+    var feelEntries: [Calibration.Entry]? = nil // feel.csv, read once and kept
+    var feelEditing = false         // the energy % is a box being typed into
+    var feelAsk: FeelAsk? = nil     // a correction typed in, waiting for "Fine-tune the chart" or "Only the number"
+    var feelAfter: FeelAfter? = nil // after a correction: re-plan the day? bring a high-effort task forward?
 
     // ---- time at the computer
     var activeSince = Date.distantPast
@@ -265,6 +287,7 @@ final class AppModel: ObservableObject {
         SleepLog.load()
         EnergyDay.use12 = Settings.get("Clock12", EnergyDay.use12 ? 1 : 0) > 0.5
         let now = AppModel.now()
+        if opening { feelEntries = nil; feelEditing = false }
         energy = EnergyModel.build(SleepLog.data.nights, need: Settings.get("SleepNeed", EnergyModel.defaultNeed), day: SleepLog.today(now), correction: Tuning.active(now))
         needHint = NeedEstimate.build(SleepLog.data.nights, Feedback.read(), now)
         if opening {
@@ -437,10 +460,11 @@ final class AppModel: ObservableObject {
     func upcoming() -> [TaskItem] {
         let today = Date().dateOnly
         let tomorrow = today.addingDays(1)
+        let prio = AppModel.priorityMode // by priority the list itself is the order: a time does not move a task up
         func group(_ t: TaskItem) -> Int {
             let d = t.dueAt
             if t.id == timerId { return 0 }
-            if t.hasTime, let dd = d, dd < tomorrow { return 1 }
+            if !prio, t.hasTime, let dd = d, dd < tomorrow { return 1 }
             if let dd = d, dd.dateOnly > today { return 3 }
             return 2
         }
@@ -470,7 +494,11 @@ final class AppModel: ObservableObject {
         if let level = TaskTags.level(t.energy) { p.append(level.prefix(1).uppercased() + level.dropFirst() + " effort") }
         if t.kind == "physical" { p.append("physical") }
         p.append(String(durationMin(t)) + " min")
-        if let d = t.dueAt { p.append((t.overdue ? "overdue · " : "") + When.label(d, hasTime: t.hasTime)) }
+        let prio = AppModel.priorityMode // by priority nothing is "overdue", and a time an old schedule gave is not shown
+        if let d = t.dueAt, !(prio && t.planned) {
+            let late: Bool = t.overdue && !prio
+            p.append((late ? "overdue · " : "") + When.label(d, hasTime: t.hasTime))
+        }
         if t.routine != nil { p.append("routine") }
         return p.joined(separator: " · ")
     }
@@ -532,9 +560,9 @@ final class AppModel: ObservableObject {
     }
 
     func deleteTask(_ t: TaskItem) {
+        if timerId == t.id { stopTimer() } // (its stretch of work is logged first)
         data.tasks.removeAll { $0 === t }
         if whenOpenId == t.id { whenOpenId = nil }
-        if timerId == t.id { stopTimer() }
         save()
         withAnimation(.easeOut(duration: 0.18)) { changed() }
         shell?.contentChanged()
@@ -569,7 +597,10 @@ final class AppModel: ObservableObject {
     }
 
     func setDate(_ t: TaskItem, _ d: Date) {
+        var planned = false // picking the same day again keeps a planned time movable by Plan
+        if t.planned, t.hasTime, let was = t.dueAt { planned = was.dateOnly == d.dateOnly }
         if t.hasTime, let old = t.dueAt { t.setDue(d.atTimeOfDay(old.timeOfDay), hasTime: true) } else { t.setDue(d, hasTime: false) }
+        t.planned = planned
         whenOpenId = nil
         save()
         changed()
@@ -633,28 +664,65 @@ final class AppModel: ObservableObject {
 
     func timerSeconds() -> Double { return timerRunning ? timerEnd.timeIntervalSinceNow : timerLeft }
 
+    static func clockText(_ seconds: Int) -> String {
+        let mm: Int = seconds / 60
+        let ss: Int = seconds % 60
+        return String(mm) + ":" + (ss < 10 ? "0" : "") + String(ss)
+    }
+
     func timerText(_ t: TaskItem) -> String {
-        let s = t.id == timerId ? Int(ceil(max(0, timerSeconds()))) : AppModel.durationMin(t) * 60
-        return String(s / 60) + ":" + (s % 60 < 10 ? "0" : "") + String(s % 60)
+        if AppModel.priorityMode {
+            // a stopwatch, counting up; a task not started yet shows its planned length ("45m")
+            let w: Double = elapsed(t)
+            if w <= 0 && t.id != timerId { return TaskTags.len(AppModel.durationMin(t)) }
+            return AppModel.clockText(Int(w.rounded(.down)))
+        }
+        // always minutes and seconds ("90:00", "120:00"), so every timer has the same shape
+        let s: Int = t.id == timerId ? Int(ceil(max(0, timerSeconds()))) : AppModel.durationMin(t) * 60
+        return AppModel.clockText(s)
     }
 
     func holdFeedback() { if !rateNow { feedbackOpen = false } }
 
     func startTimer(_ t: TaskItem) {
+        // by priority it is a stopwatch: it counts up and never runs out
         timerId = t.id
-        timerEnd = Date().addingMinutes(AppModel.durationMin(t))
+        timerEnd = AppModel.priorityMode ? Date.distantFuture : Date().addingMinutes(AppModel.durationMin(t))
         timerRunning = true
         timerLeft = 0
         holdFeedback()
+        workSync() // a stretch of work starts: work.csv
     }
 
-    func stopTimer() { timerId = nil; timerRunning = false; timerLeft = 0 }
+    func stopTimer() { timerId = nil; timerRunning = false; timerLeft = 0; workSync() }
 
     func timerClick(_ t: TaskItem) {
+        if AppModel.priorityMode {
+            // play starts the stopwatch on this task (pausing any other); pause ends the stretch and puts the rest of the
+            // list in order again. The paused task is still the one in hand: it stays first until another is started.
+            let pause: Bool = timerId == t.id && timerRunning
+            if pause {
+                timerRunning = false
+                timerLeft = 0
+                workSync()
+                resortData()
+                save()
+            } else {
+                startTimer(t)
+            }
+            if alertKind != 0 {
+                clearAlert()
+                if !shown { return }
+            }
+            changed()
+            shell?.contentChanged()
+            return
+        }
         if timerId != t.id { startTimer(t) }
         else if timerRunning { timerLeft = max(0, timerSeconds()); timerRunning = false }
         else if timerLeft > 0 { timerEnd = Date().addingTimeInterval(timerLeft); timerRunning = true; holdFeedback() }
         else { startTimer(t) }
+        workSync()
         if alertKind == 1 { clearAlert() }
         changed()
         shell?.contentChanged()
@@ -668,14 +736,22 @@ final class AppModel: ObservableObject {
         let dt = min(5, now.timeIntervalSince(lastTimerTick))
         lastTimerTick = now
         if let id = timerId, timerRunning, dt > 0 { timerSecs[id, default: 0] += dt }
+        timerTick(now)
+        workTick() // work.csv, and the pause when you have left (WorkModel.swift)
+    }
+
+    func timerTick(_ now: Date) {
         if timerId == nil { return }
-        if timerRunning && now >= timerEnd { timeUp(); return }
-        if shown && timerRunning { changed() }
+        let prio: Bool = AppModel.priorityMode
+        if timerRunning && !prio && now >= timerEnd { timeUp(); return }
+        if shown && timerRunning && (!prio || showWatch) { changed() }
     }
 
     func timeUp() {
         timerRunning = false
         timerLeft = 0
+        workWhy = "timer ended"
+        workSync()
         guard let t = data.tasks.first(where: { $0.id == timerId && !$0.done }) else { stopTimer(); return }
         alertKind = 1
         alertTaskId = t.id
@@ -704,6 +780,7 @@ final class AppModel: ObservableObject {
         timerEnd = Date().addingMinutes(minutes)
         timerRunning = true
         holdFeedback()
+        workSync()
         clearAlert()
     }
 
@@ -718,11 +795,13 @@ final class AppModel: ObservableObject {
     /// After a task is ticked off: stop its timer, and if it was the current one, offer the next.
     func taskCompleted(_ t: TaskItem, wasNext wasNextIn: Bool) {
         var wasNext = wasNextIn
+        workCompleted(t) // work.csv: the stretch that ends here ends "completed"
         if timerId == t.id {
             stopTimer()
             wasNext = true
             if shown { showFeedback(AppModel.now()) }
         }
+        resortData() // by priority: the rest are put in order for the energy you have now
         if alertTaskId == t.id { alertKind = 0 }
         if !wasNext { return }
         guard let next = upcoming().first(where: { $0 !== t }) else { alertKind = 0; alertTaskId = nil; return }
@@ -858,36 +937,162 @@ final class AppModel: ObservableObject {
 
     // ------------------------------------------------------------ Plan
 
+    /// "Plan my day". By priority it is an order, not times (WorkModel.swift).
     func makePlan(keepStarted: Bool = false) {
-        guard let e = energy else { return }
-        proposal = Planner.plan(data.tasks, energy: e, routines: Routines.data?.routines, now: AppModel.now(), keepStarted: keepStarted)
-        changed()
+        if !keepStarted {
+            if AppModel.priorityMode { makeOrder(); return }
+            planSplit.removeAll()
+            planKeep.removeAll()
+        }
+        proposePlan(keepStarted)
     }
+
+    func proposePlan(_ keepStarted: Bool) {
+        guard let e = energy else { return }
+        planKeepStarted = keepStarted
+        proposal = Planner.propose(data.tasks, energy: e, routines: Routines.data?.routines, now: AppModel.now(),
+                                   keepStarted: keepStarted, split: planSplit)
+        changed()
+        shell?.contentChanged()
+    }
+
+    /// The answer to "split it, or keep it as one session?" on a row of the shown plan.
+    func splitInPlan(_ id: String, _ split: Bool) {
+        if split {
+            planSplit.insert(id)
+            planKeep.remove(id)
+        } else {
+            planSplit.remove(id)
+            planKeep.insert(id)
+        }
+        proposePlan(planKeepStarted)
+    }
+
+    func discardPlan() {
+        proposal = nil
+        planSplit.removeAll()
+        planKeep.removeAll()
+        changed()
+        shell?.contentChanged()
+    }
+
+    static func splitTitle(_ title: String, _ part: Int) -> String { return title + " (" + String(part) + "/2)" }
 
     func applyPlan() {
         guard let p = proposal else { return }
-        var undo: [(id: String, due: String?, hasTime: Bool, notified: Bool, planned: Bool)] = []
-        for it in p where it.placed {
-            guard let t = data.tasks.first(where: { $0.id == it.id }), !t.done else { continue }
-            undo.append((t.id, t.due, t.hasTime, t.notified, t.planned))
-            t.setDue(it.start, hasTime: true)
-            t.planned = true
+        var undo: [PlanUndo] = []
+        planOrder = data.tasks.map { $0.id }
+        // the first sessions before the second ones (C#: OrderBy(SplitOf))
+        for pass in 0...2 {
+            for it in p where it.placed && it.splitOf == pass {
+                guard let t = data.tasks.first(where: { $0.id == it.id }), !t.done else { continue }
+                if pass == 2 {
+                    // the second session becomes a task of its own, right after the first
+                    let t2 = TaskItem(id: AppModel.newId(), title: AppModel.splitTitle(it.title, 2))
+                    t2.energy = t.energy
+                    t2.kind = t.kind
+                    t2.minutes = it.minutes
+                    t2.routine = t.routine
+                    t2.routineDay = t.routineDay
+                    t2.setDue(it.start, hasTime: true)
+                    t2.planned = true
+                    let at: Int = data.tasks.firstIndex(where: { $0 === t }) ?? (data.tasks.count - 1)
+                    data.tasks.insert(t2, at: at + 1)
+                    var made = PlanUndo(id: t2.id)
+                    made.created = true
+                    undo.append(made)
+                    continue
+                }
+                var u = PlanUndo(id: t.id)
+                u.due = t.due
+                u.hasTime = t.hasTime
+                u.notified = t.notified
+                u.planned = t.planned
+                u.title = t.title
+                u.minutes = t.minutes
+                undo.append(u)
+                t.setDue(it.start, hasTime: true)
+                t.planned = true
+                if pass == 1 {
+                    t.title = AppModel.splitTitle(it.title, 1)
+                    t.minutes = it.minutes
+                }
+            }
         }
         planUndo = undo
         proposal = nil
+        planSplit.removeAll()
+        planKeep.removeAll()
+        sortByTime()
         save()
         changed()
+        shell?.contentChanged()
+    }
+
+    /// After a plan is applied: today's timed tasks first, in time order, then the rest as they were.
+    /// Dragging a row still reorders the list by hand afterwards.
+    func sortByTime() {
+        let today = Date().dateOnly
+        let tomorrow = today.addingDays(1)
+        func group(_ t: TaskItem) -> Int {
+            let d = t.dueAt
+            if t.done { return 4 }
+            if t.hasTime, let dd = d, dd < tomorrow { return 1 }
+            if let dd = d, dd.dateOnly > today { return 3 }
+            return 2
+        }
+        var items: [(t: TaskItem, i: Int, g: Int, at: Double)] = []
+        var i = 0
+        for t in data.tasks {
+            let g = group(t)
+            let at: Double = g == 1 ? (t.dueAt?.timeIntervalSince1970 ?? 0) : 0
+            items.append((t, i, g, at))
+            i += 1
+        }
+        items.sort { a, b in
+            if a.g != b.g { return a.g < b.g }
+            if a.at != b.at { return a.at < b.at }
+            return a.i < b.i
+        }
+        data.tasks = items.map { $0.t }
+    }
+
+    /// Puts the list back in a remembered order; tasks added since keep their place at the end.
+    func restoreOrder(_ was: [String]) {
+        var place: [String: Int] = [:]
+        for (k, id) in was.enumerated() where place[id] == nil { place[id] = k }
+        var items: [(t: TaskItem, i: Int, k: Int)] = []
+        var i = 0
+        for t in data.tasks {
+            items.append((t, i, place[t.id] ?? Int.max))
+            i += 1
+        }
+        items.sort { a, b in
+            if a.k != b.k { return a.k < b.k }
+            return a.i < b.i
+        }
+        data.tasks = items.map { $0.t }
     }
 
     func undoPlan() {
         guard let u = planUndo else { return }
         for x in u {
             guard let t = data.tasks.first(where: { $0.id == x.id }) else { continue }
+            if x.created {
+                if !t.done { data.tasks.removeAll { $0 === t } }
+                continue
+            }
             t.due = x.due; t.hasTime = x.hasTime; t.notified = x.notified; t.planned = x.planned
+            if let title = x.title { t.title = title; t.minutes = x.minutes }
         }
         planUndo = nil
+        if let was = planOrder {
+            planOrder = nil
+            restoreOrder(was)
+        }
         save()
         changed()
+        shell?.contentChanged()
     }
 
     // ------------------------------------------------------------ naps
@@ -1003,6 +1208,20 @@ final class AppModel: ObservableObject {
         for x in rows where x.day > today.addingDays(-7) { r.timed += x.timerMinutes }
         return r
     }
+}
+
+/// What an applied plan replaced on one task (or, `created`, the second session it added).
+struct PlanUndo {
+    var id: String
+    var due: String? = nil
+    var title: String? = nil
+    var hasTime = false
+    var notified = false
+    var planned = false
+    var created = false
+    var minutes = 0
+
+    init(id: String) { self.id = id }
 }
 
 /// The lines on the energy notices: one at random, before the dip and before each peak.

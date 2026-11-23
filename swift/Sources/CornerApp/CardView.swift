@@ -273,18 +273,20 @@ struct FocusTop: View {
     @State private var resetHot = false
 
     var body: some View {
+        let prio = AppModel.priorityMode
         let timed = model.timerId == t.id
-        let late = t.overdue && !timed
-        let state = timed ? (model.timerRunning ? "Now" : "Paused") : "Next"
-        var when: String? = nil
-        if t.hasTime, let d = t.dueAt { when = (late ? "overdue " : "") + EnergyDay.clock(d) }
+        // by priority nothing is "overdue", and a time an old schedule gave the task is not shown
+        let late = t.overdue && !timed && !prio
+        let state: String = stateText(timed)
+        let when: String? = whenText(late, prio)
         return HStack(alignment: .center, spacing: 8) {
             Caps(text: state, color: timed && model.timerRunning ? T.text : nil)
             if let w = when {
                 Text(w).font(late ? Fonts.lean(m.z(11)) : m.font(11)).foregroundColor(late ? T.danger : T.muted)
             }
             Spacer(minLength: 0)
-            if timed {
+            if timed && !prio {
+                // a timer that has been started can be put back to the task's full length
                 Text("Reset").font(m.font(11)).foregroundColor(resetHot ? T.text : T.muted)
                     .onHover { resetHot = $0 }
                     .onTapGesture { model.resetTimer() }
@@ -292,6 +294,19 @@ struct FocusTop: View {
             }
         }
         .padding(.bottom, m.sp(9, 7))
+    }
+
+    /// "Now" or "Paused" while it is being timed; else "Next", by priority with why this one is next.
+    func stateText(_ timed: Bool) -> String {
+        if timed { return model.timerRunning ? "Now" : "Paused" }
+        if let reason = model.nextReason(t) { return "Next · " + reason }
+        return "Next"
+    }
+
+    func whenText(_ late: Bool, _ prio: Bool) -> String? {
+        if prio && t.planned { return nil }
+        guard t.hasTime, let d = t.dueAt else { return nil }
+        return (late ? "overdue " : "") + EnergyDay.clock(d)
     }
 }
 
@@ -304,16 +319,18 @@ struct FocusTitle: View {
     var body: some View {
         let ck = m.sp(22, 20)
         let size = m.z(m.sp(22, 18))
+        let worked = model.workedOn(t)
         HStack(alignment: .top, spacing: 0) {
             Circle()
                 .stroke(T.text, lineWidth: 1.5)
                 .background(Circle().fill(hot ? T.soft : Color.clear))
+                .overlay(tick(worked, ck))
                 .frame(width: ck, height: ck)
                 .frame(width: ck + m.sp(11, 9), height: max(size * 1.2, ck), alignment: .leading)
                 .contentShape(Rectangle())
                 .onHover { hot = $0 }
                 .onTapGesture { model.completeTask(t) }
-                .help("Mark as done")
+                .help(worked ? "Completed" : "Mark as done")
             Text(t.title)
                 .font(Fonts.ui(size, true))
                 .foregroundColor(T.text)
@@ -322,6 +339,14 @@ struct FocusTitle: View {
             Spacer(minLength: 0)
         }
     }
+
+    /// The task being worked on: its circle carries a tick, so the one control says "completed".
+    func tick(_ worked: Bool, _ ck: CGFloat) -> some View {
+        Glyph(d: Icons.tick, color: T.text, th: 1.8, w: 18, h: 18)
+            .scaleEffect(ck / 18)
+            .opacity(worked ? 1 : 0)
+            .allowsHitTesting(false)
+    }
 }
 
 struct ThenChip: View {
@@ -329,7 +354,8 @@ struct ThenChip: View {
     let n: TaskItem
     var body: some View {
         var text = "then " + n.title
-        if n.hasTime, let d = n.dueAt, d.dateOnly <= Date().dateOnly { text += ", " + EnergyDay.clock(d) }
+        let hidden: Bool = AppModel.priorityMode && n.planned // by priority a time an old schedule gave is not shown
+        if !hidden, n.hasTime, let d = n.dueAt, d.dateOnly <= Date().dateOnly { text += ", " + EnergyDay.clock(d) }
         return Text(text)
             .font(m.font(11.5)).foregroundColor(T.muted).lineLimit(1).truncationMode(.tail)
             .padding(.horizontal, m.sp(14, 12))
@@ -340,7 +366,18 @@ struct ThenChip: View {
     }
 }
 
-/// The countdown beside a task. Click to start; click again to pause or carry on.
+/// How a timer pill looks at this moment.
+struct PillLook {
+    var ground: Color = Color.clear
+    var ink: Color = Color.clear
+    var text: String = ""
+    var showText: Bool = true
+    var running: Bool = false
+    var semi: Bool = false
+    var tip: String = ""
+}
+
+/// The countdown beside a task (by priority: a stopwatch, counting up). Click to start; click again to pause or carry on.
 struct TimerPill: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.m) var m
@@ -349,29 +386,65 @@ struct TimerPill: View {
     @State private var hot = false
 
     var body: some View {
-        let mine = model.timerId == t.id
-        let running = mine && model.timerRunning
-        let ground: Color = big ? (running ? T.accent : T.strong) : (mine ? T.accent : Color.clear)
-        let ink: Color = big ? (running ? T.onAccent : T.onStrong) : (mine ? T.onAccent : (hot ? T.text : T.muted))
-        let size = m.z(big ? 13 : 11)
-        let semi = big || mine
+        let k: PillLook = look()
+        let size: CGFloat = m.z(big ? 13 : 11)
+        let minW: CGFloat = Fonts.width("00:00", size, true)
+        let fill: Color? = big && !k.running ? k.ink : nil
         HStack(spacing: big ? 7 : 5) {
-            Glyph(d: running ? Icons.pause : Icons.play, color: ink, th: big ? 1.6 : 1.3, w: 9, h: 10, fill: big && !running ? ink : nil)
-            Text(model.timerText(t))
-                .font(Fonts.ui(size, semi))
-                .foregroundColor(ink)
-                .frame(minWidth: Fonts.width("00:00", size, true), alignment: .trailing)
+            Glyph(d: k.running ? Icons.pause : Icons.play, color: k.ink, th: big ? 1.6 : 1.3, w: 9, h: 10, fill: fill)
+            if k.showText {
+                Text(k.text)
+                    .font(Fonts.ui(size, k.semi))
+                    .foregroundColor(k.ink)
+                    .frame(minWidth: minW, alignment: .trailing)
+            }
         }
         .padding(.leading, big ? m.sp(13, 11) : 7)
         .padding(.trailing, big ? m.sp(16, 14) : 8)
         .padding(.vertical, big ? 0 : 2)
         .frame(height: big ? m.sp(34, 30) : nil)
-        .background(Capsule().fill(ground))
+        .background(Capsule().fill(k.ground))
         .opacity(big && hot ? 0.9 : 1)
         .contentShape(Capsule())
         .onHover { hot = $0 }
         .onTapGesture { model.timerClick(t) }
-        .help(running ? "Pause the timer" : (mine ? "Carry on" : "Start a " + String(AppModel.durationMin(t)) + "-minute timer"))
+        .help(k.tip)
+    }
+
+    func look() -> PillLook {
+        var k = PillLook()
+        let mine: Bool = model.timerId == t.id
+        let running: Bool = mine && model.timerRunning
+        let prio: Bool = AppModel.priorityMode
+        let begun: Bool = prio && (mine || t.worked > 0)
+        let mins: Int = AppModel.durationMin(t)
+        k.running = running
+        k.semi = big || mine
+        if big {
+            k.ground = running ? T.accent : T.strong
+            k.ink = running ? T.onAccent : T.onStrong
+        } else if mine {
+            k.ground = T.accent
+            k.ink = T.onAccent
+        } else {
+            k.ground = Color.clear
+            k.ink = hot ? T.text : T.muted
+        }
+        if begun && model.elapsed(t) > Double(mins * 60) {
+            // past its planned length: a quiet change of colour, no prompt
+            if big || mine { k.ground = T.dangerSoft }
+            k.ink = T.danger
+        }
+        // (a Full Mode row already shows its length beside its effort)
+        let blank: Bool = prio && !begun && !big && model.full
+        k.text = blank ? "" : model.timerText(t)
+        k.showText = !(begun && !model.showWatch) // "Show stopwatch" off (Settings): the icon alone
+        if prio {
+            k.tip = running ? "Pause" : (begun ? "Carry on with this" : "Start working on this")
+        } else {
+            k.tip = running ? "Pause the timer" : (mine ? "Carry on" : "Start a " + String(mins) + "-minute timer")
+        }
+        return k
     }
 }
 
@@ -432,6 +505,19 @@ struct RoundChip: View {
 struct AddBox: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.m) var m
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            AddPill()
+            HabitRow()
+        }
+    }
+}
+
+/// The box you type a task into.
+struct AddPill: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.m) var m
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -461,6 +547,53 @@ struct AddBox: View {
         .overlay(Rim(radius: 20))
         .onAppear { if model.addOpen && !model.full && !model.demoRun { focused = true } }
         .onChange(of: model.focusInput) { _ in focused = true }
+    }
+}
+
+/// Under the add box: what the work log says you usually do at this time of day, one click each.
+struct HabitRow: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.m) var m
+
+    var body: some View {
+        let offer: [Habits.Habit] = model.habitOffer()
+        if !offer.isEmpty {
+            FlowRow(items: items(offer), hs: 4, vs: 4)
+                .padding(.leading, 2)
+                .padding(.bottom, -4)
+        }
+    }
+
+    func items(_ offer: [Habits.Habit]) -> [AnyView] {
+        let part: Int = Habits.part(AppModel.now())
+        var list: [AnyView] = []
+        let label = Text("Usually this " + Habits.partNames[part] + ":")
+            .font(m.font(11)).foregroundColor(T.muted).lineLimit(1).fixedSize()
+            .padding(.top, 2).padding(.bottom, 3).padding(.trailing, 2)
+        list.append(label.any())
+        for h in offer { list.append(HabitChip(h: h).any()) }
+        return list
+    }
+}
+
+struct HabitChip: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.m) var m
+    let h: Habits.Habit
+    @State private var hot = false
+
+    var body: some View {
+        // no wider than 150: a long title is cut short with an ellipsis
+        let w: CGFloat = min(150, Fonts.width(h.title, m.z(11)) + 2)
+        Text(h.title)
+            .font(m.font(11)).foregroundColor(T.text).lineLimit(1).truncationMode(.tail)
+            .frame(width: w, alignment: .leading)
+            .padding(.horizontal, 9).padding(.top, 2).padding(.bottom, 3)
+            .background(Capsule().fill(hot ? T.lift : T.field))
+            .contentShape(Capsule())
+            .onHover { hot = $0 }
+            .onTapGesture { model.addHabit(h) }
+            .help(AppModel.habitTip(h))
     }
 }
 
@@ -563,8 +696,14 @@ struct AlertView: View {
             ]
         }
         return [
-            Btn(text: "Start " + String(AppModel.durationMin(t)) + " min", kind: 0, on: 2) { model.startTimer(t); model.clearAlert() }.any(),
+            Btn(text: startText(t), kind: 0, on: 2) { model.startTimer(t); model.clearAlert() }.any(),
             Btn(text: "Not yet", kind: 2, on: 2) { model.clearAlert() }.any(),
         ]
+    }
+
+    /// By priority the next task has a stopwatch, not a countdown of so many minutes.
+    func startText(_ t: TaskItem) -> String {
+        if AppModel.priorityMode { return "Start" }
+        return "Start " + String(AppModel.durationMin(t)) + " min"
     }
 }
