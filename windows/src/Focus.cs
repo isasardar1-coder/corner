@@ -1,4 +1,4 @@
-// Corner - the "what's next" view: the next task in its tray with its timer, the row of chips under it,
+﻿// Corner - the "what's next" view: the next task in its tray with its timer, the row of chips under it,
 // the timers on the rows of the list, and the time-up and next-task prompts.
 using System;
 using System.Collections.Generic;
@@ -43,8 +43,9 @@ namespace Corner
             allOpen = Settings.Get("AllOpen", 0) > 0.5;
 
             var ticker = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-            ticker.Tick += (s, e) => { CountTimer(); TimerTick(); }; // CountTimer: minutes on each task, for done.csv (Stats.cs)
+            ticker.Tick += (s, e) => { CountTimer(); TimerTick(); WorkTick(); }; // CountTimer: minutes on each task, for done.csv (Stats.cs); WorkTick: work.csv (Work.cs)
             ticker.Start();
+            InitWork();
         }
 
         /// Decides what is visible below the header, for the corner panel and for Full Mode.
@@ -53,28 +54,31 @@ namespace Corner
             if (focusBox == null) return;
             minBtn.Visibility = full ? Visibility.Visible : Visibility.Collapsed;
             if (fullBox != null) fullBox.Visibility = full ? Visibility.Collapsed : Visibility.Visible;
+            if (gearBox != null) gearBox.Visibility = full ? Visibility.Visible : Visibility.Collapsed; // settings are opened from Full Mode
+            headText.Visibility = full ? Visibility.Visible : Visibility.Collapsed; // the corner panel's header is the ring and two buttons
 
             var on = Visibility.Visible; var off = Visibility.Collapsed;
+            ArrangeFull(full); // Full Mode: plan and next task under the list, done tasks in the other column (FullLayout.cs)
             if (promptOnly) { focusBox.Visibility = off; actionRow.Visibility = off; tasksAdd.Visibility = off; LayoutTop(); return; }
             if (full)
             {   // Full Mode: next task on top, then the add box and the whole list; energy is the other column
                 focusBox.Visibility = on; actionRow.Visibility = off; tasksAdd.Visibility = on; tasksScroll.Visibility = on;
-                tasksAdd.Margin = new Thickness(Side, 0, SideMid, GapY);
                 LayoutTop();
+                ArrangeFull(true); // (sets the next task's margins, which LayoutTop leaves alone)
                 return;
             }
             // the corner panel. At rest it is the next task alone: no header, no chips, no list (Reveal brings them in)
             bool tasksView = tab == 0, rest = Bare;
             bool adding = tasksView && addOpen && !rest, listing = tasksView && allOpen && !rest;
             headerRow.Visibility = rest ? off : on;
-            focusBox.Visibility = tasksView ? on : off;
+            focusBox.Visibility = on; // (it stays while the cycle is open under it)
             actionRow.Visibility = rest ? off : on;
             tasksAdd.Visibility = adding ? on : off;
             tasksScroll.Visibility = listing ? on : off;
             // whatever is last in the panel keeps the edge's distance below it
             bool more = !tasksView || allOpen || addOpen;
             actionRow.Margin = new Thickness(Side, 0, Side, more ? GapY : Side);
-            tasksAdd.Margin = new Thickness(Side, 0, SideMid, allOpen ? GapY : Side);
+            tasksAdd.Margin = new Thickness(TaskL, 0, TaskR, allOpen ? GapY : Side);
             tasksScroll.Margin = new Thickness(0, 0, 0, listing ? Side : 0); // (collapsed, it must not hold the edge's distance twice)
             LayoutTop(); // the margins of the trays and prompts (Checks.cs)
             DrawActions();
@@ -91,6 +95,8 @@ namespace Corner
         void Reveal()
         {
             if (!bare) return;
+            if (!demoRun) genieIcon = false; // the pointer came onto the startup panel: it closes into its corner, without the icon
+            if (genieOpening) { revealWaiting = true; return; } // still coming out as one picture: growing under it would end in a jump (Launch.cs)
             bool was = Bare;
             bare = false;
             if (!was || !shown) return;
@@ -123,11 +129,12 @@ namespace Corner
         List<TaskItem> Upcoming()
         {
             var tomorrow = DateTime.Today.AddDays(1);
+            bool prio = PriorityMode; // by priority the list itself is the order (Work.cs): a time does not move a task up
             Func<TaskItem, int> group = t =>
             {
                 var d = t.DueAt;
                 if (t.Id == timerId) return 0;
-                if (t.HasTime && d != null && d.Value < tomorrow) return 1;
+                if (!prio && t.HasTime && d != null && d.Value < tomorrow) return 1;
                 if (d != null && d.Value.Date > DateTime.Today) return 3;
                 return 2;
             };
@@ -145,8 +152,8 @@ namespace Corner
             if (level != null) p.Add(char.ToUpperInvariant(level[0]) + level.Substring(1) + " effort");
             if (t.Kind == "physical") p.Add("physical");
             p.Add(DurationMin(t) + " min");
-            var d = t.DueAt;
-            if (d != null) p.Add((t.Overdue ? "overdue · " : "") + When.Label(d.Value, t.HasTime));
+            var d = t.DueAt; bool prio = PriorityMode; // by priority nothing is "overdue", and a time an old schedule gave is not shown (Work.cs)
+            if (d != null && !(prio && t.Planned)) p.Add((t.Overdue && !prio ? "overdue · " : "") + When.Label(d.Value, t.HasTime));
             if (t.Routine != null) p.Add("routine");
             return string.Join(" · ", p);
         }
@@ -162,8 +169,8 @@ namespace Corner
 
         readonly List<Action> focusTimers = new List<Action>(), rowTimers = new List<Action>();
 
-        /// The tray at the top, three lines: what it is ("Next", "Now", "Paused") and when it is due; the task, large,
-        /// beside its circle; then its timer as a dark pill and, on a white chip, the task after it.
+        /// The next task, one line in both modes: its circle, the task, large, and its timer as a pill at the end.
+        /// While it is being timed a small line above says "Now" or "Paused", with "Reset" at its far end.
         void DrawFocus()
         {
             if (focusBox == null || data == null) return;
@@ -179,25 +186,21 @@ namespace Corner
             }
 
             var t = up[0];
-            bool timed = timerId == t.Id, late = t.Overdue && !timed;
+            bool timed = timerId == t.Id;
             var due = t.DueAt;
-            string state = timed ? (timerRunning ? "Now" : "Paused") : "Next";
-            string when = t.HasTime && due != null ? (late ? "overdue " : "") + EnergyDay.Clock(due.Value) : null;
+            bool prio = PriorityMode;
+            string reason; rankWhy.TryGetValue(t.Id, out reason); // by priority: why this one is next (Work.cs)
+            if (!prio || timed) reason = null;
+            string state = timed ? (timerRunning ? "Now" : "Paused") : reason != null ? "Next · " + reason : "Next";
 
-            // line 1: the state, then when it is due; while it is being timed, "Reset" at the far end
+            // above the task, only while it is being timed: the state, and "Reset" at the far end
             var top = new Grid { Margin = new Thickness(0, 0, 0, Sp(9, 7)) };
             var says = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             var cap = Caps(state); cap.VerticalAlignment = VerticalAlignment.Center;
             if (timed && timerRunning) cap.Foreground = T.Text;
             says.Children.Add(cap);
-            if (when != null)
-            {
-                var w = new TextBlock { Text = when, FontSize = Z(11), Foreground = late ? (Brush)T.Danger : T.Muted, Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-                if (late) Lean(w);
-                says.Children.Add(w);
-            }
             top.Children.Add(says);
-            if (timed)
+            if (timed && !prio)
             {   // a timer that has been started can be put back to the task's full length
                 var reset = new TextBlock { Text = "Reset", FontSize = Z(11), Foreground = T.Muted, Background = Brushes.Transparent, Cursor = Cursors.Hand, Padding = new Thickness(10, 0, 0, 0), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, ToolTip = "Put the timer back to " + DurationMin(t) + " min" };
                 reset.MouseEnter += (s, e) => reset.Foreground = T.Text;
@@ -205,7 +208,7 @@ namespace Corner
                 reset.MouseLeftButtonDown += (s, e) => { e.Handled = true; StopTimer(); RepaintTimers(); DrawFocus(); };
                 top.Children.Add(reset);
             }
-            sp.Children.Add(top);
+            if ((timed || reason != null) && !Bare) sp.Children.Add(top);
 
             // line 2: the circle and the task; the circle is centred on the title's first line
             double ck = Sp(22, 20), lead = ck + Sp(11, 9);
@@ -213,9 +216,16 @@ namespace Corner
             var main = new Grid { Background = Brushes.Transparent };
             main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(lead) });
             main.ColumnDefinitions.Add(new ColumnDefinition());
-            var box = new Grid { Height = first, VerticalAlignment = VerticalAlignment.Top, Background = Brushes.Transparent, Cursor = Cursors.Hand, ToolTip = "Mark as done" };
+            main.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var box = new Grid { Height = first, VerticalAlignment = VerticalAlignment.Top, Background = Brushes.Transparent, Cursor = Cursors.Hand, ToolTip = WorkedOn(t) ? "Completed" : "Mark as done" };
             var ring = new Ellipse { Width = ck, Height = ck, Stroke = T.Text, StrokeThickness = 1.5, Fill = Brushes.Transparent, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
             box.Children.Add(ring);
+            if (WorkedOn(t))
+            {   // the task being worked on: its circle carries a tick, so the one control says "completed" (Work.cs)
+                var done = Glyph("M5,9.4 L7.9,12.2 L13.2,6.2", T.Text, 1.8, 18, 18);
+                done.LayoutTransform = new ScaleTransform(ck / 18, ck / 18); done.HorizontalAlignment = HorizontalAlignment.Left;
+                box.Children.Add(done);
+            }
             box.MouseEnter += (s, e) => ring.Fill = T.Soft;
             box.MouseLeave += (s, e) => ring.Fill = Brushes.Transparent;
             box.MouseLeftButtonDown += (s, e) => { e.Handled = true; CompleteTask(t); };
@@ -223,29 +233,16 @@ namespace Corner
             var title = new TextBlock { Text = t.Title, FontSize = titleSize, FontWeight = FontWeights.SemiBold, Foreground = T.Text, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Top, ToolTip = Tip(InfoText(t)) };
             Grid.SetColumn(title, 1); main.Children.Add(title);
             sp.Children.Add(main);
-
-            // line 3: the timer, and what comes after
-            var row = new Grid { Margin = new Thickness(0, Sp(11, 9), 0, 0) };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            row.ColumnDefinitions.Add(new ColumnDefinition());
-            row.Children.Add(TimerPill(t, true, focusTimers));
-            if (up.Count > 1)
-            {
-                var n = up[1]; var nd = n.DueAt;
-                var then = new TextBlock
-                {
-                    Text = "then " + n.Title + (n.HasTime && nd != null && nd.Value.Date <= DateTime.Today ? ", " + EnergyDay.Clock(nd.Value) : ""),
-                    FontSize = Z(11.5), Foreground = T.Muted, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center
-                };
-                var chip = new PillBorder { Height = Sp(34, 30), Background = T.Field, Padding = new Thickness(Sp(14, 12), 0, Sp(14, 12), 1), Margin = new Thickness(6, 0, 0, 0), HorizontalAlignment = HorizontalAlignment.Left, Child = then, ToolTip = Tip("Then: " + n.Title + "\n" + InfoText(n)) };
-                Grid.SetColumn(chip, 1); row.Children.Add(chip);
-            }
-            sp.Children.Add(row);
+            // the timer at the end of the task's own line, and nothing else
+            var pill = TimerPill(t, true, focusTimers);
+            pill.Margin = new Thickness(10, (first - Sp(34, 30)) / 2, 0, 0);
+            Grid.SetColumn(pill, 2); main.Children.Add(pill);
             focusBox.Child = sp;
             if (!promptOnly && !full) DrawActions();
         }
 
-        /// Under the next task, a row of chips: "All tasks" (opens the list), add a task, and the energy view.
+        /// Under the next task, a row of chips: "All tasks" (opens the list), add a task, and the energy cycle,
+        /// which opens under the row in the list's place.
         /// A chip is forest green while what it opens is showing.
         void DrawActions()
         {
@@ -259,21 +256,19 @@ namespace Corner
             bool listOn = tab == 0 && allOpen;
             Brush ink = listOn ? (Brush)T.OnStrong : T.Text;
             var words = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-            var lead = Glyph(tab == 1 ? "M8.5,3.5 L5,7 L8.5,10.5" : "M2.5,4 H11.5 M2.5,7 H11.5 M2.5,10 H11.5", ink, 1.5, 14, 14);
+            var lead = Glyph("M2.5,4 H11.5 M2.5,7 H11.5 M2.5,10 H11.5", ink, 1.5, 14, 14);
             words.Children.Add(lead);
-            words.Children.Add(new TextBlock { Text = tab == 1 ? "Tasks" : "All tasks", FontSize = Z(12), Foreground = ink, Margin = new Thickness(7, 0, 6, 1), VerticalAlignment = VerticalAlignment.Center });
-            if (tab == 0) words.Children.Add(new TextBlock { Text = open.ToString(), FontSize = Z(11), Foreground = listOn ? (Brush)T.OnStrongSoft : T.Muted, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 1) });
+            words.Children.Add(new TextBlock { Text = "All tasks", FontSize = Z(12), Foreground = ink, Margin = new Thickness(7, 0, 6, 1), VerticalAlignment = VerticalAlignment.Center });
+            words.Children.Add(new TextBlock { Text = open.ToString(), FontSize = Z(11), Foreground = listOn ? (Brush)T.OnStrongSoft : T.Muted, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 1) });
             var inside = new Grid { Margin = new Thickness(11, 0, 11, 0) };
             inside.Children.Add(words);
-            if (tab == 0)
-            {   // an arrow at the far end: across when the list is closed, down when it is open
-                var arrow = Glyph(listOn ? "M3.5,5.5 L7,9 L10.5,5.5" : "M5.5,3.5 L9,7 L5.5,10.5", ink, 1.5, 14, 14);
-                arrow.HorizontalAlignment = HorizontalAlignment.Right;
-                inside.Children.Add(arrow);
-            }
+            // an arrow at the far end: across when the list is closed, down when it is open
+            var arrow = Glyph(listOn ? "M3.5,5.5 L7,9 L10.5,5.5" : "M5.5,3.5 L9,7 L5.5,10.5", ink, 1.5, 14, 14);
+            arrow.HorizontalAlignment = HorizontalAlignment.Right;
+            inside.Children.Add(arrow);
             actionRow.Children.Add(Chip(inside, listOn, null, () =>
             {
-                if (tab == 1) { SetTab(0); return; }
+                if (tab == 1) { allOpen = true; Settings.Set("AllOpen", 1); SetTab(0); return; } // the list takes the cycle's place
                 allOpen = !allOpen; Settings.Set("AllOpen", allOpen ? 1 : 0);
                 FocusLayout();
             }));
@@ -284,7 +279,8 @@ namespace Corner
                 if (addOpen) { Activate(); input.Focus(); }
             });
             Grid.SetColumn(add, 1); actionRow.Children.Add(add);
-            var en = RoundChip("M1.5,9 C3.5,1 5.5,1 7,7 S10.5,12 12.5,4", tab == 1, "Energy", () => SetTab(tab == 1 ? 0 : 1));
+            var en = RoundChip("M1.5,9 C3.5,1 5.5,1 7,7 S10.5,12 12.5,4", tab == 1, "Energy", () => CycleGenie(tab == 1 ? 0 : 1)); // drops down under the chips, and folds back up (Launch.cs)
+            cycleBtn = en;
             Grid.SetColumn(en, 2); actionRow.Children.Add(en);
         }
 
@@ -333,7 +329,14 @@ namespace Corner
 
         string TimerText(TaskItem t)
         {
-            int s = t.Id == timerId ? (int)Math.Ceiling(Math.Max(0, TimerSeconds())) : DurationMin(t) * 60;
+            if (PriorityMode)
+            {   // a stopwatch, counting up; a task not started yet shows its planned length ("45m")
+                double w = Elapsed(t);
+                if (w <= 0 && t.Id != timerId) return TaskTags.Len(DurationMin(t));
+                int ws = (int)Math.Floor(w);
+                return string.Format("{0}:{1:00}", ws / 60, ws % 60);
+            }
+            int s =t.Id == timerId ? (int)Math.Ceiling(Math.Max(0, TimerSeconds())) : DurationMin(t) * 60;
             return string.Format("{0}:{1:00}", s / 60, s % 60); // always minutes and seconds ("90:00", "120:00"), so every timer has the same shape
         }
 
@@ -354,15 +357,22 @@ namespace Corner
             Action paint = () =>
             {
                 bool mine = t.Id == timerId, running = mine && timerRunning;
-                Brush ground = big ? (running ? (Brush)T.Accent : T.Strong) : mine ? (Brush)T.Accent : Brushes.Transparent;
-                Brush ink = big ? (running ? (Brush)T.OnAccent : T.OnStrong) : mine ? (Brush)T.OnAccent : hot ? T.Text : T.Muted;
-                label.Text = TimerText(t);
+                Brush ground = big ? (running ? (Brush)T.Accent : T.Main) : mine ? (Brush)T.Accent : Brushes.Transparent; // waiting: the colour of the main button
+                Brush ink = big ? (running ? (Brush)T.OnAccent : T.OnMain) : mine ? (Brush)T.OnAccent : hot ? T.Text : T.Muted;
+                bool prio = PriorityMode, begun = prio && (mine || t.Worked > 0);
+                if (begun && Elapsed(t) > DurationMin(t) * 60)
+                {   // past its planned length: a quiet change of colour, no prompt
+                    if (big || mine) { ground = T.DangerSoft; ink = T.Danger; } else ink = T.Danger;
+                }
+                label.Text = prio && !begun && !big && full ? "" : TimerText(t); // (a Full Mode row already shows its length beside its effort)
+                label.Visibility = begun && !ShowWatch ? Visibility.Collapsed : Visibility.Visible; // "Show stopwatch" off (Settings): the icon alone
                 b.Background = ground; label.Foreground = ink;
                 label.FontWeight = big || mine ? SemiSmall : FontWeights.Normal;
                 icon.Data = Geometry.Parse(running ? "M2.5,1.5 V8.5 M6.5,1.5 V8.5" : "M2,1.5 L7.5,5 L2,8.5 Z"); // pause bars, or a play triangle
                 icon.Stroke = ink; icon.Fill = big && !running ? ink : Brushes.Transparent; // the next task's play triangle is solid
                 b.Opacity = big && hot ? 0.9 : 1;
-                b.ToolTip = running ? "Pause the timer" : mine ? "Carry on" : "Start a " + DurationMin(t) + "-minute timer";
+                b.ToolTip = prio ? (running ? "Pause" : begun ? "Carry on with this" : "Start working on this")
+                    : running ? "Pause the timer" : mine ? "Carry on" : "Start a " + DurationMin(t) + "-minute timer";
             };
             paint(); repaint.Add(paint);
             b.MouseEnter += (s, e) => { hot = true; paint(); };
@@ -379,19 +389,33 @@ namespace Corner
 
         void StartTimer(TaskItem t)
         {
-            timerId = t.Id; timerEnd = DateTime.Now.AddMinutes(DurationMin(t)); timerRunning = true; timerLeft = 0;
+            // by priority it is a stopwatch: it counts up (Work.cs) and never runs out
+            timerId = t.Id; timerEnd = PriorityMode ? DateTime.MaxValue : DateTime.Now.AddMinutes(DurationMin(t)); timerRunning = true; timerLeft = 0;
             HoldFeedback();
+            WorkSync(); // a stretch of work starts: work.csv (Work.cs)
         }
 
-        void StopTimer() { timerId = null; timerRunning = false; timerLeft = 0; }
+        void StopTimer() { timerId = null; timerRunning = false; timerLeft = 0; WorkSync(); }
 
         void TimerClick(TaskItem t)
         {
+            if (PriorityMode)
+            {   // play starts the stopwatch on this task (pausing any other); pause ends the stretch and puts the rest of the
+                // list in order again. The paused task is still the one in hand: it stays first until another is started.
+                bool pause = timerId == t.Id && timerRunning;
+                if (commitEdit != null) commitEdit();
+                if (pause) { timerRunning = false; timerLeft = 0; WorkSync(); ResortData(); Save(); } else StartTimer(t);
+                if (alertKind != 0) { ClearAlert(); if (!shown) return; }
+                Rebuild(); RepaintTimers(); DrawFocus();
+                return;
+            }
             if (timerId != t.Id) StartTimer(t);
             else if (timerRunning) { timerLeft = Math.Max(0, TimerSeconds()); timerRunning = false; }
             else if (timerLeft > 0) { timerEnd = DateTime.Now.AddSeconds(timerLeft); timerRunning = true; HoldFeedback(); }
             else StartTimer(t);
+            WorkSync();
             if (alertKind == 1) ClearAlert();
+            Rebuild(); // (the row being timed makes room for its tick)
             RepaintTimers();
             DrawFocus(); // the timed task moves to the top
         }
@@ -399,8 +423,9 @@ namespace Corner
         void TimerTick()
         {
             if (timerId == null) return;
-            if (timerRunning && DateTime.Now >= timerEnd) { TimeUp(); return; }
-            if (shown && timerRunning) RepaintTimers();
+            bool prio = PriorityMode;
+            if (timerRunning && !prio && DateTime.Now >= timerEnd) { TimeUp(); return; }
+            if (shown && timerRunning && (!prio || ShowWatch)) RepaintTimers();
         }
 
         // ------------------------------------------------------------ prompts: time's up, and what next
@@ -411,6 +436,7 @@ namespace Corner
         void TimeUp()
         {
             timerRunning = false; timerLeft = 0;
+            workWhy = "timer ended"; WorkSync();
             var t = data.Tasks.FirstOrDefault(x => x.Id == timerId && !x.Done);
             if (t == null) { StopTimer(); return; }
             alertKind = 1; alertTaskId = t.Id;
@@ -427,7 +453,7 @@ namespace Corner
             if (alertKind == 0 || t == null) { ClearAlert(); return; }
 
             var sp = new StackPanel();
-            var cap = Caps(alertKind == 1 ? "Time's up" : "Ready for the next one?"); cap.Foreground = T.Accent; cap.Margin = new Thickness(0, 0, 0, 4);
+            var cap = Caps(alertKind == 1 ? "Time's up" : "Ready for the next one?"); cap.Foreground = T.AccentOn; cap.Margin = new Thickness(0, 0, 0, 4);
             sp.Children.Add(cap);
             sp.Children.Add(new TextBlock { Text = t.Title, FontSize = Hd(15), FontWeight = FontWeights.SemiBold, Foreground = T.OnStrong, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 4, Sp(11, 9)) });
             var row = new WrapPanel();
@@ -450,7 +476,7 @@ namespace Corner
             }
             else
             {
-                row.Children.Add(Btn("Start " + DurationMin(t) + " min", 0, () => { StartTimer(t); ClearAlert(); }, 2));
+                row.Children.Add(Btn(PriorityMode ? "Start" : "Start " + DurationMin(t) + " min", 0, () => { StartTimer(t); ClearAlert(); }, 2));
                 row.Children.Add(Btn("Not yet", 2, ClearAlert, 2));
             }
             sp.Children.Add(row);
@@ -466,6 +492,7 @@ namespace Corner
         {
             timerId = t.Id; timerEnd = DateTime.Now.AddMinutes(minutes); timerRunning = true;
             HoldFeedback();
+            WorkSync();
             ClearAlert();
         }
 
@@ -484,6 +511,7 @@ namespace Corner
         void CompleteTask(TaskItem t)
         {
             bool wasNext = IsFocus(t);
+            Click.Play(); // (Sound.cs)
             t.Done = true; t.DoneAt = DateTime.Now.ToString("o", CultureInfo.InvariantCulture);
             LogDone(t); // a row in done.csv (Stats.cs)
             if (whenOpenId == t.Id) whenOpenId = null;
@@ -494,7 +522,9 @@ namespace Corner
         /// After any task is ticked off: stop its timer, and if it was the current one, offer the next.
         void TaskCompleted(TaskItem t, bool wasNext)
         {
+            WorkCompleted(t); // work.csv: the stretch that ends here ends "completed" (Work.cs)
             if (timerId == t.Id) { StopTimer(); wasNext = true; if (shown) ShowFeedback(Now()); } // the timed task is done: a waiting check-in is asked now
+            ResortData(); // by priority: the rest are put in order for the energy you have now
             if (alertTaskId == t.Id) alertKind = 0;
             if (!wasNext) { if (alertKind == 0) alertBox.Visibility = Visibility.Collapsed; return; }
             var next = Upcoming().FirstOrDefault();

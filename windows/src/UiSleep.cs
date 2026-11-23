@@ -19,6 +19,7 @@ namespace Corner
         // ------------------------------------------------------------ the chart: cursor and scrolling
 
         FrameworkElement chartThumb; // the scroll bar's handle (the test hook drags it)
+        ScrollViewer chartScroll;    // the corner panel's chart, so a picture of the panel shows it where it is scrolled (Launch.cs)
         double chartOffset = -1; // how far the corner panel's chart is scrolled; -1 = centre on now
         readonly List<Action<double>> chartPins = new List<Action<double>>(); // zone names that follow the scrolling (DrawEnergy)
 
@@ -92,7 +93,7 @@ namespace Corner
                 thumb.Margin = new Thickness(chartOffset / max * run, 0, 0, 0);
                 foreach (var p in chartPins) p(chartOffset);
             };
-            scrollTo = go; chartThumb = thumb;
+            scrollTo = go; chartThumb = thumb; chartScroll = sv;
             thumb.Margin = new Thickness(start / max * run, 0, 0, 0);
             foreach (var p in chartPins) p(start);
             sv.Loaded += (s, a) => sv.ScrollToHorizontalOffset(start);
@@ -126,6 +127,7 @@ namespace Corner
         int newRoutineMin = 30;
 
         bool debtOpen;        // opened by clicking the Debt figure
+        readonly bool[] statOpen = new bool[3]; // Full Mode: which of Slept, Debt and Need are showing their box (UiEnergy.cs)
         int debtExtra = 30;   // minutes of extra sleep a night, for the pay-back sum
 
         static string Mins(double minutes)

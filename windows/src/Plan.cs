@@ -1,4 +1,4 @@
-// Corner - task energy tags, daily routines and the Plan action.
+﻿// Corner - task energy tags, daily routines and the Plan action.
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -239,6 +239,10 @@ namespace Corner
         public DateTime Start;
         internal int End;
         internal bool Tried;
+        public int SplitOf;                 // 1 or 2: this is that session of a task split across both peaks (0 = not split)
+        public bool CanSplit;               // a high task that misses the first peak as one session, but would fit as two
+        public int SplitA, SplitB;          // the two sessions' minutes, when CanSplit
+        public DateTime SplitAt1, SplitAt2; // and their starts
     }
 
     /// Proposes a start time for each open task that has no fixed time.
@@ -252,6 +256,28 @@ namespace Corner
         public const int CheckInGap = 60;       // check-ins are at least this many minutes apart
         public const int CheckInSpread = 120;   // and at most about this far apart when the day has room
         public const int PeakFit = 80;          // when no slot lies wholly on a peak: percent of a task that must, to count as "mostly on the peak"
+        public const int MinSession = 30;       // a split task's shorter session is at least this long
+
+        /// Plan, plus an offer on each high task that would not sit wholly on the first peak as one session but
+        /// fits as two (one on each peak): CanSplit, with the two sessions' lengths and starts. `split` holds the ids
+        /// of the tasks the user chose to split; those come back as two items each (SplitOf 1 and 2).
+        public static List<PlanItem> Propose(IList<TaskItem> tasks, EnergyDay e, IList<Routine> routines, DateTime now, bool keepStarted, ICollection<string> split)
+        {
+            var plan = Plan(tasks, e, routines, now, keepStarted, split);
+            if (e.Peak1 == null || e.Peak2 == null) return plan;
+            foreach (var it in plan.Where(x => x.Level == "high" && !x.Physical && !x.CheckIn && x.SplitOf == 0 && x.Minutes >= 2 * MinSession).ToList())
+            {
+                double slack = EnergyDay.StepMin / 2.0 + 0.5; // starts are on the 5-minute grid, the peak's edges are not
+                if (it.Placed && it.Start >= e.Peak1.From.AddMinutes(-slack) && it.Start.AddMinutes(it.Minutes) <= e.Peak1.To.AddMinutes(slack)) continue; // already wholly on the first peak
+                var s = new HashSet<string>(split ?? new string[0]); s.Add(it.Id);
+                var alt = Plan(tasks, e, routines, now, keepStarted, s);
+                var a = alt.FirstOrDefault(x => x.Id == it.Id && x.SplitOf == 1);
+                var b = alt.FirstOrDefault(x => x.Id == it.Id && x.SplitOf == 2);
+                if (a == null || b == null || !a.Placed || !b.Placed) continue;
+                it.CanSplit = true; it.SplitA = a.Minutes; it.SplitB = b.Minutes; it.SplitAt1 = a.Start; it.SplitAt2 = b.Start;
+            }
+            return plan;
+        }
 
         /// The end of the time Plan fills when planning at `now`: an hour before bed, or bedtime itself once
         /// less than half an hour is left before that hour, so a plan made late in the evening still has room.
@@ -271,17 +297,18 @@ namespace Corner
         }
 
         /// keepStarted: planned tasks whose start time has already passed stay where they are (used when re-planning after a nap).
-        public static List<PlanItem> Plan(IList<TaskItem> tasks, EnergyDay e, IList<Routine> routines, DateTime now, bool keepStarted = false)
+        public static List<PlanItem> Plan(IList<TaskItem> tasks, EnergyDay e, IList<Routine> routines, DateTime now, bool keepStarted = false, ICollection<string> split = null)
         {
             Func<TaskItem, bool> started = t => keepStarted && t.Planned && t.HasTime && t.DueAt != null && t.DueAt.Value <= now;
             int step = EnergyDay.StepMin, n = e.Samples.Length, gap = GapMinutes / step;
             var day = e.Wake.Date; string key = day.ToString("yyyy-MM-dd");
             var taken = new bool[n];
             var zone = new int[n];   // 1 = peak, 2 = dip
+            var peakNo = new int[n]; // 1 = the first peak, 2 = the second
             Func<DateTime, int> idx = t => Math.Max(0, Math.Min(n, (int)Math.Round((t - e.Wake).TotalMinutes / step)));
             Action<int[], DateTime, DateTime, int> fill = (arr, a, b, v) => { for (int i = idx(a); i < idx(b); i++) arr[i] = v; };
-            if (e.Peak1 != null) fill(zone, e.Peak1.From, e.Peak1.To, 1);
-            if (e.Peak2 != null) fill(zone, e.Peak2.From, e.Peak2.To, 1);
+            if (e.Peak1 != null) { fill(zone, e.Peak1.From, e.Peak1.To, 1); fill(peakNo, e.Peak1.From, e.Peak1.To, 1); }
+            if (e.Peak2 != null) { fill(zone, e.Peak2.From, e.Peak2.To, 1); fill(peakNo, e.Peak2.From, e.Peak2.To, 2); }
             if (e.Dip != null) fill(zone, e.Dip.From, e.Dip.To, 2);
             foreach (var nap in e.Naps) for (int i = idx(nap.From); i < idx(nap.To); i++) taken[i] = true; // never inside a logged sleep period
             foreach (var t in tasks)
@@ -398,6 +425,30 @@ namespace Corner
                 return at >= 0 ? at : find(it, from, i => true);
             };
 
+            // A task the user chose to split: one session wholly on the first peak, the other wholly on the second.
+            // The two lengths are as even as the peaks allow, each at least MinSession.
+            Func<PlanItem, int, int, bool> onPeak = (p, i, no) => { for (int k = i; k < i + lenOf(p); k++) if (k >= n || peakNo[k] != no) return false; return true; };
+            Func<PlanItem, bool> trySplit = it =>
+            {
+                int total = it.Minutes, from = notBefore(it);
+                if (total < 2 * MinSession) return false;
+                var sizes = new List<int>();
+                for (int m = MinSession; m <= total - MinSession; m += step) sizes.Add(m);
+                foreach (int a in sizes.OrderBy(m => Math.Abs(2 * m - total)).ThenByDescending(m => m))
+                {
+                    var p1 = new PlanItem { Minutes = a }; var p2 = new PlanItem { Minutes = total - a };
+                    int i1 = find(p1, from, i => onPeak(p1, i, 1));
+                    if (i1 < 0) continue;
+                    int i2 = find(p2, i1 + lenOf(p1) + gap, i => onPeak(p2, i, 2));
+                    if (i2 < 0) continue;
+                    it.Minutes = a; it.SplitOf = 1; place(it, i1);
+                    var second = new PlanItem { Id = it.Id, Title = it.Title, Level = it.Level, Routine = it.Routine, Minutes = total - a, SplitOf = 2, Tried = true };
+                    items.Add(second); place(second, i2);
+                    return true;
+                }
+                return false;
+            };
+
             // Order of choosing; within each group, the order in the task list.
             var groups = new Func<PlanItem, bool>[]
             {
@@ -415,6 +466,7 @@ namespace Corner
                     {
                         if (it.Placed || it.Tried || it.CheckIn || plannedPred(it) != null) continue;
                         it.Tried = true;
+                        if (split != null && split.Contains(it.Id) && it.Level == "high" && !it.Physical && trySplit(it)) continue;
                         int at = choose(it, notBefore(it));
                         if (at >= 0) place(it, at);
                     }
@@ -521,37 +573,85 @@ namespace Corner
 
         // ------------------------------------------------------------ Plan
 
-        class PlanUndo { public string Id, Due; public bool HasTime, Notified, Planned; }
+        class PlanUndo { public string Id, Due, Title; public bool HasTime, Notified, Planned, Created; public int Minutes; }
         List<PlanItem> proposal;   // shown, not yet applied
         List<PlanUndo> planUndo;   // what the last applied plan replaced
+        HashSet<string> planSplit = new HashSet<string>(); // tasks the user chose to split across both peaks in the shown plan
+        HashSet<string> planKeep = new HashSet<string>();  // and those they chose to keep as one session (no more asking)
         bool routinesOpen;
         string editRoutine;
 
 
-        void MakePlan() { MakePlan(false); }
+        void MakePlan() { if (PriorityMode) { MakeOrder(); return; } planSplit.Clear(); planKeep.Clear(); MakePlan(false); } // by priority: an order, not times (Work.cs)
 
+        bool planKeepStarted;
         void MakePlan(bool keepStarted)
         {
             if (energy == null) return;
-            proposal = Planner.Plan(data.Tasks, energy, Routines.Data != null ? Routines.Data.Routines : null, Now(), keepStarted);
+            planKeepStarted = keepStarted;
+            proposal = Planner.Propose(data.Tasks, energy, Routines.Data != null ? Routines.Data.Routines : null, Now(), keepStarted, planSplit);
             DrawEnergy();
+        }
+
+        /// The answer to "split it, or keep it as one session?" on a row of the shown plan.
+        void SplitInPlan(string id, bool split)
+        {
+            if (split) { planSplit.Add(id); planKeep.Remove(id); } else { planSplit.Remove(id); planKeep.Add(id); }
+            MakePlan(planKeepStarted);
         }
 
         void ApplyPlan()
         {
             if (proposal == null) return;
             planUndo = new List<PlanUndo>();
-            foreach (var it in proposal.Where(x => x.Placed))
+            planOrder = data.Tasks.Select(x => x.Id).ToList();
+            foreach (var it in proposal.Where(x => x.Placed).OrderBy(x => x.SplitOf))
             {
                 var t = data.Tasks.FirstOrDefault(x => x.Id == it.Id);
                 if (t == null || t.Done) continue;
-                planUndo.Add(new PlanUndo { Id = t.Id, Due = t.Due, HasTime = t.HasTime, Notified = t.Notified, Planned = t.Planned });
+                if (it.SplitOf == 2)
+                {   // the second session becomes a task of its own, right after the first
+                    var t2 = new TaskItem
+                    {
+                        Id = Guid.NewGuid().ToString("N"), Title = SplitTitle(it.Title, 2), Energy = t.Energy, Kind = t.Kind,
+                        Minutes = it.Minutes, Routine = t.Routine, RoutineDay = t.RoutineDay
+                    };
+                    t2.SetDue(it.Start, true); t2.Planned = true;
+                    data.Tasks.Insert(data.Tasks.IndexOf(t) + 1, t2);
+                    planUndo.Add(new PlanUndo { Id = t2.Id, Created = true });
+                    continue;
+                }
+                planUndo.Add(new PlanUndo { Id = t.Id, Due = t.Due, HasTime = t.HasTime, Notified = t.Notified, Planned = t.Planned, Title = t.Title, Minutes = t.Minutes });
                 t.SetDue(it.Start, true);
                 t.Planned = true;
+                if (it.SplitOf == 1) { t.Title = SplitTitle(it.Title, 1); t.Minutes = it.Minutes; }
             }
-            proposal = null;
+            proposal = null; planSplit.Clear(); planKeep.Clear();
+            SortByTime();
             Save(); Rebuild(); DrawEnergy();
         }
+
+        List<string> planOrder;    // the list order the last applied plan replaced
+
+        /// After a plan is applied: today's timed tasks first, in time order, then the rest as they were.
+        /// Dragging a row still reorders the list by hand afterwards.
+        void SortByTime()
+        {
+            var tomorrow = DateTime.Today.AddDays(1);
+            Func<TaskItem, int> group = t =>
+            {
+                var d = t.DueAt;
+                if (t.Done) return 4;
+                if (t.HasTime && d != null && d.Value < tomorrow) return 1;
+                if (d != null && d.Value.Date > DateTime.Today) return 3;
+                return 2;
+            };
+            var sorted = data.Tasks.Select((t, i) => new { t, i, g = group(t) })
+                .OrderBy(x => x.g).ThenBy(x => x.g == 1 ? x.t.DueAt.Value.Ticks : 0).ThenBy(x => x.i).Select(x => x.t).ToList();
+            data.Tasks.Clear(); data.Tasks.AddRange(sorted);
+        }
+
+        static string SplitTitle(string title, int part) { return title + " (" + part + "/2)"; }
 
         void UndoPlan()
         {
@@ -560,9 +660,17 @@ namespace Corner
             {
                 var t = data.Tasks.FirstOrDefault(x => x.Id == u.Id);
                 if (t == null) continue;
+                if (u.Created) { if (!t.Done) data.Tasks.Remove(t); continue; }
                 t.Due = u.Due; t.HasTime = u.HasTime; t.Notified = u.Notified; t.Planned = u.Planned;
+                if (u.Title != null) { t.Title = u.Title; t.Minutes = u.Minutes; }
             }
             planUndo = null;
+            if (planOrder != null)
+            {   // the list order from before the plan; tasks added since keep their place at the end
+                var was = planOrder; planOrder = null;
+                var sorted = data.Tasks.Select((t, i) => new { t, i, k = was.IndexOf(t.Id) }).OrderBy(x => x.k < 0 ? int.MaxValue : x.k).ThenBy(x => x.i).Select(x => x.t).ToList();
+                data.Tasks.Clear(); data.Tasks.AddRange(sorted);
+            }
             Save(); Rebuild(); DrawEnergy();
         }
 

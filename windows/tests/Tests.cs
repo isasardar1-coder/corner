@@ -380,6 +380,79 @@ namespace CornerTests
             double bestE = Enumerable.Range(0, 40).Select(k => en.Wake.AddMinutes(5 * k)).Where(t => PeakShare(en, t, 240) >= 0.8).Max(t => AvgE(en, new PlanItem { Start = t, Minutes = 240 }));
             Check("a high task longer than the peak takes the highest-energy slot that is mostly on it", p5[0].Placed && PeakShare(en, p5[0].Start, 240) >= 0.8 && AvgE(en, p5[0]) >= bestE - 1e-9, AvgE(en, p5[0]).ToString("0.0000") + " vs best " + bestE.ToString("0.0000"));
 
+            // a 90-minute high task planned when only part of the first peak is left: offered as two sessions, spOne per peak
+            {
+                var spAt = en.Peak1.To.AddMinutes(-60); // an hour of the first peak left
+                var wr = Task("Writing", "high", 90);
+                var spOne = Planner.Propose(new List<TaskItem> { wr }, en, null, spAt, false, null);
+                Console.WriteLine("  90m high task with 60m of the first peak left: " + string.Join(", ", spOne.Select(x => x.Placed ? EnergyDay.Clock(x.Start) : "--")) + (spOne[0].CanSplit ? " (offer " + spOne[0].SplitA + "m " + EnergyDay.Clock(spOne[0].SplitAt1) + " + " + spOne[0].SplitB + "m " + EnergyDay.Clock(spOne[0].SplitAt2) + ")" : ""));
+                Check("split: offered when one session misses the first peak", spOne.Count == 1 && spOne[0].CanSplit && spOne[0].SplitA + spOne[0].SplitB == 90 && spOne[0].SplitA >= Planner.MinSession && spOne[0].SplitB >= Planner.MinSession);
+                var spTwo = Planner.Propose(new List<TaskItem> { wr }, en, null, spAt, false, new[] { wr.Id });
+                var s1 = spTwo.FirstOrDefault(x => x.SplitOf == 1); var s2 = spTwo.FirstOrDefault(x => x.SplitOf == 2);
+                Check("split: two sessions, first wholly on peak 1, second wholly on peak 2", s1 != null && s2 != null && s1.Placed && s2.Placed
+                    && s1.Start >= spAt && s1.Start >= en.Peak1.From && s1.Start.AddMinutes(s1.Minutes) <= en.Peak1.To
+                    && s2.Start >= en.Peak2.From && s2.Start.AddMinutes(s2.Minutes) <= en.Peak2.To && s1.Minutes + s2.Minutes == 90);
+                Check("split: as even as the peaks allow (45 + 45 here)", s1 != null && s1.Minutes == 45 && s2.Minutes == 45);
+                var spEarly = Planner.Propose(new List<TaskItem> { Task("Writing", "high", 90) }, en, null, en.Wake, false, null);
+                Check("split: not offered when the task fits wholly on the first peak", spEarly[0].Placed && !spEarly[0].CanSplit);
+                var spLate = Planner.Propose(new List<TaskItem> { Task("Writing", "high", 90) }, en, null, en.Peak1.To.AddMinutes(10), false, null);
+                Check("split: not offered once the first peak is over", !spLate[0].CanSplit);
+                var shortT = Planner.Propose(new List<TaskItem> { Task("Short", "high", 50) }, en, null, spAt.AddMinutes(30), false, null);
+                Check("split: not offered for a task under two sessions' worth (" + (2 * Planner.MinSession) + "m)", !shortT[0].CanSplit);
+            }
+
+            // ------------------------------------------------------------------ 4b2. the energy counter, matched to you
+            Console.WriteLine("== 4b2. Energy counter corrections");
+            {
+                var cNow = new DateTime(2026, 11, 23, 12, 0, 0);
+                var calnone = new List<Calibration.Entry>();
+                Check("no corrections: the counter is the curve", Math.Abs(Calibration.Map(0.30, calnone, cNow) - 0.30) < 1e-9);
+                var calone = new List<Calibration.Entry> { new Calibration.Entry { At = cNow, Model = 0.30, Felt = 0.63 } };
+                Check("one correction: 30% read as 63%", Math.Abs(Calibration.Map(0.30, calone, cNow) - 0.63) < 1e-9);
+                Check("one correction shifts the rest of the day too", Math.Abs(Calibration.Map(0.40, calone, cNow) - 0.73) < 1e-9);
+                var calspread = new List<Calibration.Entry> {
+                    new Calibration.Entry { At = cNow.AddHours(-5), Model = 0.30, Felt = 0.40 },
+                    new Calibration.Entry { At = cNow.AddHours(-3), Model = 0.40, Felt = 0.60 },
+                    new Calibration.Entry { At = cNow.AddHours(-1), Model = 0.50, Felt = 0.80 } };
+                Check("several apart on the curve: the scale stretches", Math.Abs(Calibration.Map(0.45, calspread, cNow) - 0.70) < 1e-9);
+                var calold = new List<Calibration.Entry> { new Calibration.Entry { At = cNow.AddDays(-90), Model = 0.30, Felt = 0.90 } };
+                Check("corrections older than 60 days are left out", Math.Abs(Calibration.Map(0.30, calold, cNow) - 0.30) < 1e-9);
+                Check("never above 100%", Calibration.Map(0.95, calone, cNow) <= 1);
+
+                // what a correction may lead to: a re-plan, or a high-effort task now
+                Func<int, int, Zone> zn = (a, b) => new Zone { From = cNow.Date.AddMinutes(a), To = cNow.Date.AddMinutes(b) };
+                var dayA = new EnergyDay { Peak1 = zn(540, 690), Dip = zn(810, 930), Peak2 = zn(1080, 1260) };
+                var dayB = new EnergyDay { Peak1 = zn(545, 695), Dip = zn(810, 930), Peak2 = zn(1080, 1260) };
+                var dayC = new EnergyDay { Peak1 = zn(540, 720), Dip = zn(810, 930), Peak2 = zn(1080, 1260) };
+                var dayD = new EnergyDay { Peak1 = zn(540, 690), Dip = null, Peak2 = zn(1080, 1260) };
+                Check("re-plan: a 5-minute shift is not a move", !FeelPlan.ZonesMoved(dayA, dayB));
+                Check("re-plan: the peak ending 30 min later is a move", FeelPlan.ZonesMoved(dayA, dayC));
+                Check("re-plan: a dip that disappears is a move", FeelPlan.ZonesMoved(dayA, dayD));
+                Func<string, string, DateTime?, TaskItem> tk = (title, lvl, due) => { var t = new TaskItem { Id = title, Title = title, Energy = lvl }; if (due != null) t.SetDue(due, true); return t; };
+                var hiTasks = new List<TaskItem> { tk("Email", "low", null), tk("Writing", "high", cNow.AddHours(6)), tk("Report", "high", null) };
+                var hiPick = FeelPlan.HighNow(hiTasks, 0.63, 30, cNow, false);
+                Check("energy now: offers the high-effort task timed later today", hiPick != null && hiPick.Title == "Writing");
+                Check("energy now: no offer when you feel only a little above the counter", FeelPlan.HighNow(hiTasks, 0.63, 55, cNow, false) == null);
+                Check("energy now: no offer when you feel low", FeelPlan.HighNow(hiTasks, 0.40, 10, cNow, false) == null);
+                Check("energy now: no offer while a task timer runs", FeelPlan.HighNow(hiTasks, 0.63, 30, cNow, true) == null);
+                hiTasks.Add(tk("Deep read", "high", cNow.AddMinutes(30)));
+                Check("energy now: no offer when one is coming up within the hour", FeelPlan.HighNow(hiTasks, 0.63, 30, cNow, false) == null);
+            }
+
+            // ------------------------------------------------------------------ 4c. updates
+            Console.WriteLine("== 4c. Updates");
+            {
+                Check("update: v9.0.0 is newer than this build", Updater.IsNewer("v9.0.0"));
+                Check("update: this build's own tag is not newer", !Updater.IsNewer("v" + Updater.Version));
+                Check("update: v1.0.0 is not newer", !Updater.IsNewer("v1.0.0"));
+                Check("update: a tag that is not a version is ignored", !Updater.IsNewer("nightly") && !Updater.IsNewer(null));
+                Check("update: version as a number", Updater.Number("1.2.3") == 10203 && Updater.Number("v1.1") == 10100);
+                string upTag, upUrl;
+                string upJson = "{\"tag_name\": \"v1.2.0\", \"assets\": [{\"name\": \"Corner-Mac-Swift.zip\", \"browser_download_url\": \"https://github.com/x/y/releases/download/v1.2.0/Corner-Mac-Swift.zip\"}, {\"name\": \"Corner-Windows.zip\", \"browser_download_url\": \"https://github.com/x/y/releases/download/v1.2.0/Corner-Windows.zip\"}]}";
+                Check("update: reads the tag and the Windows zip from a release", Updater.ParseRelease(upJson, out upTag, out upUrl) && upTag == "v1.2.0" && upUrl.EndsWith("/v1.2.0/Corner-Windows.zip"));
+                Check("update: a release without the Windows zip is skipped", !Updater.ParseRelease("{\"tag_name\": \"v2.0.0\", \"assets\": []}", out upTag, out upUrl));
+            }
+
             // ------------------------------------------------------------------ 4b. completion log (done.csv, days.csv)
             Console.WriteLine("== 4b. Completion log");
             {
@@ -436,6 +509,66 @@ namespace CornerTests
             }
             var mine2 = NeedEstimate.Build(realNights, Feedback.Read(), DateTime.Now);
             Console.WriteLine("  your own data: " + mine2.Note);
+
+            // ------------------------------------------------------------------ work log, habits and the order by priority (Work.cs)
+            Console.WriteLine("== Work log, habits, priority");
+            Check("parts of the day: 08:00 morning, 12:30 noon, 15:00 afternoon, 19:00 and 02:00 evening",
+                Habits.Part(day.AddHours(8)) == 0 && Habits.Part(day.AddHours(12.5)) == 1 && Habits.Part(day.AddHours(15)) == 2 && Habits.Part(day.AddHours(19)) == 3 && Habits.Part(day.AddHours(2)) == 3);
+            var pwRow = new WorkRow { Start = day.AddHours(9).AddSeconds(5), End = day.AddHours(9.75), Minutes = 44.9, Id = "a1", Title = "Write, \"concept\" 14", Effort = "high", Kind = "mental", Planned = 45, E0 = 48, E1 = 61, Ended = "paused" };
+            WorkRow pwBack;
+            bool pwOk = WorkLog.Parse(WorkLog.Line(pwRow), out pwBack);
+            Check("a row of work.csv reads back as written (title with a comma and quotes, energy 48 -> 61, no typed %)",
+                pwOk && pwBack.Start == pwRow.Start && pwBack.End == pwRow.End && pwBack.Title == pwRow.Title && pwBack.Effort == "high" && pwBack.E0 == 48 && pwBack.E1 == 61 && pwBack.Felt < 0 && pwBack.Ended == "paused" && pwBack.Planned == 45, WorkLog.Line(pwRow));
+            if (System.IO.File.Exists(WorkLog.File)) System.IO.File.Delete(WorkLog.File);
+            WorkLog.Forget(); WorkLog.Add(pwRow); WorkLog.Forget();
+            var pwLines = System.IO.File.ReadAllLines(WorkLog.File);
+            Check("work.csv: a heading, then one row per stretch", pwLines.Length == 2 && pwLines[0].EndsWith(WorkLog.Head) && WorkLog.Rows.Count == 1 && WorkLog.Rows[0].Id == "a1");
+            Check("a stretch across midnight ends the next day", WorkLog.Parse("2026-11-20,23:50:00,00:10:00,20,x,Late,low,mental,no,30,40,35,,paused,evening", out pwBack) && pwBack.End == new DateTime(2026, 11, 21, 0, 10, 0));
+
+            Func<string, int, double, double, string, WorkRow> pwW = (title, daysAgo, hour, mins, effort) =>
+                new WorkRow { Start = day.AddDays(-daysAgo).AddHours(hour), End = day.AddDays(-daysAgo).AddHours(hour).AddMinutes(mins), Minutes = mins, Id = title + daysAgo, Title = title, Effort = effort, Kind = "mental", Ended = "completed" };
+            var pwLog = new List<WorkRow>
+            {
+                pwW("Emails", 1, 8, 22, "low"), pwW("Emails", 2, 9, 31, "low"), pwW("emails ", 4, 8.5, 18, "low"), pwW("Emails", 0, 8, 60, "low"),
+                pwW("Gym", 1, 9, 50, "high"), pwW("Gym", 3, 9, 50, "high"),
+                pwW("Reading", 1, 20, 40, "low"), pwW("Reading", 2, 20, 40, "low"), pwW("Reading", 3, 21, 40, "low"),
+                pwW("Old habit", 30, 8, 30, "low"), pwW("Old habit", 31, 8, 30, "low"), pwW("Old habit", 32, 8, 30, "low")
+            };
+            var pwUsual = Habits.Usual(pwLog, 0, day.AddHours(9));
+            Check("usual in the morning: only what was done on 3 of the last 28 days (not twice, not a month ago, not in the evening)",
+                pwUsual.Count == 1 && pwUsual[0].Title == "Emails" && pwUsual[0].Days == 3, string.Join(", ", pwUsual.Select(pwH => pwH.Title + " x" + pwH.Days)));
+            Check("its length is the middle of the real minutes, to the nearest five; today is not counted", pwUsual.Count == 1 && pwUsual[0].Minutes == 20, pwUsual.Count == 1 ? pwUsual[0].Minutes + " min" : "");
+            Check("usual in the evening: Reading", Habits.Usual(pwLog, 3, day.AddHours(20)).Select(pwH => pwH.Title).SequenceEqual(new[] { "Reading" }));
+
+            var pwPeak = normal.Peak1.From.AddMinutes(10); var pwDip = normal.Dip.From.AddMinutes(10);
+            Func<string, string, int, TaskItem> pwT = (title, effort, mins) => new TaskItem { Id = title, Title = title, Energy = effort, Minutes = mins };
+            Func<IEnumerable<Ranked>, string> pwNames = pwRs => string.Join(" > ", pwRs.Select(pwR => pwR.Task.Title));
+            var pwTasks = new List<TaskItem> { pwT("Tidy desk", "low", 15), pwT("Review", "medium", 30), pwT("Write concept", "high", 45), pwT("Plain", null, 0) };
+            var pwOnPeak = Priority.Rank(pwTasks, normal, pwPeak, 0.6, null, null);
+            Check("on a peak: the high-effort task first, the low-effort one last, and it says why",
+                pwOnPeak[0].Task.Title == "Write concept" && pwOnPeak[0].Why == "fits your peak" && pwOnPeak.Last().Task.Title == "Tidy desk", pwNames(pwOnPeak));
+            var pwInDip = Priority.Rank(pwTasks, normal, pwDip, 0.5, null, null);
+            Check("in the dip: the low-effort task first, the high-effort one last",
+                pwInDip[0].Task.Title == "Tidy desk" && pwInDip[0].Why == "light work for the dip" && pwInDip.Last().Task.Title == "Write concept", pwNames(pwInDip));
+            var pwDue = pwT("Call the bank", "low", 10); pwDue.SetDue(pwPeak.AddMinutes(-30), true);
+            var pwLater = pwT("Next week's thing", "high", 45); pwLater.SetDue(pwPeak.Date.AddDays(3), false);
+            var pwMore = new List<TaskItem> { pwLater, pwDue }; pwMore.AddRange(pwTasks);
+            var pwMixed = Priority.Rank(pwMore, normal, pwPeak, 0.6, null, null);
+            Check("a time you set that has passed comes first, with no word of \"overdue\"; a task dated for a later day comes last",
+                pwMixed[0].Task == pwDue && pwMixed[0].Why == "due at " + EnergyDay.Clock(pwPeak.AddMinutes(-30)) && pwMixed.Last().Task == pwLater && pwMixed.Last().Later, pwNames(pwMixed));
+            Check("the task being worked on stays first", Priority.Rank(pwTasks, normal, pwPeak, 0.6, null, "Tidy desk")[0].Task.Title == "Tidy desk");
+            var pwPlanned = pwT("Placed by an old schedule", "low", 10); pwPlanned.SetDue(pwPeak.AddMinutes(-30), true); pwPlanned.Planned = true;
+            Check("a time an old schedule gave a task does not count as due", Priority.Rank(new List<TaskItem> { pwPlanned, pwTasks[2] }, normal, pwPeak, 0.6, null, null)[0].Task == pwTasks[2]);
+            var pwTwo = new List<TaskItem> { pwT("Notes", "low", 20), pwT("Emails", "low", 20) };
+            var pwHabit = Priority.Rank(pwTwo, normal, day.AddHours(9), 0.5, pwLog, null);
+            Check("of two like tasks, the one you usually do at this time of day goes first", pwHabit[0].Task.Title == "Emails" && pwHabit[0].Why == "usual for your morning", pwNames(pwHabit) + " (" + pwHabit[0].Why + ")");
+            var pwGym = pwT("Gym", "high", 45); pwGym.Kind = "physical";
+            var pwAt17 = Priority.Rank(new List<TaskItem> { pwT("Notes", null, 20), pwGym }, normal, day.AddHours(17), 0.5, null, null);
+            Check("physical work goes first in the late afternoon", pwAt17[0].Task == pwGym && pwAt17[0].Why == "good time for physical work", pwNames(pwAt17));
+            var pwTired = Priority.Rank(new List<TaskItem> { pwT("Hard", "high", 30), pwT("Easy", "low", 30) }, null, day.AddHours(22), 0.2, null, null);
+            Check("no curve and a low counter: the low-effort task first", pwTired[0].Task.Title == "Easy" && pwTired[0].Why == "low energy now", pwNames(pwTired));
+            Check("same input, same order (ties keep the list's order)", pwNames(Priority.Rank(pwTasks, normal, pwPeak, 0.6, null, null)) == pwNames(pwOnPeak)
+                && pwNames(Priority.Rank(new List<TaskItem> { pwT("A", null, 0), pwT("B", null, 0), pwT("C", null, 0) }, normal, pwPeak, 0.6, null, null)) == "A > B > C");
 
             Console.WriteLine(fails == 0 ? "ALL PASS" : fails + " FAILED");
         }

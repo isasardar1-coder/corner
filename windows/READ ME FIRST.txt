@@ -31,6 +31,12 @@ EACH DAY
 - Routines (in the energy view): your daily things. Press "Add to today" to
   send them to your tasks.
 - "Plan my day" fits your tasks to your energy, from now until bedtime.
+- Settings > Planning > "Plan by": Schedule gives each task a time. Priority
+  gives only an order: press play on a task to start a stopwatch, pause when
+  you stop. "Plan my day" then says what comes after what, not when.
+- Corner notes what you work on and when (work.csv). After a few days it
+  offers what you usually do at this time of day under the add box.
+- Click the energy % to type how you really feel; the chart can follow.
 - A card with a ring appears 10 minutes before each energy peak and
   20 minutes before the dip.
 
@@ -41,9 +47,18 @@ Everything stays on your PC, in this folder:
   tasks.json, routines.json, sleep.json, settings.json   what Corner needs
   done.csv    every task you finish (opens in Excel)
   days.csv    one line per day: done, open, by effort, sleep
+  work.csv    every stretch of work: start, length, energy at start and end
 Settings > Your record shows the last 7 days.
 
 To change the sound, replace ping.wav with any .wav file of your own.
+
+
+UPDATES
+
+Corner updates itself. It looks for a new version on GitHub a minute after it
+starts and then every 6 hours, downloads it, and restarts once you're not
+using it. Your tasks and notes stay as they are. Settings > Updates turns this
+off, and "Check now" looks straight away.
 
 
 REMOVING IT

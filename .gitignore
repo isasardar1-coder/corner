@@ -21,5 +21,7 @@ checkins.csv
 !swift/Tests/data/checkins.csv
 !windows/tests/data/checkins.csv
 feedback.csv
+work.csv
+feel.csv
 error.log
 windows/Corner.exe

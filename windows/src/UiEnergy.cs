@@ -1,4 +1,4 @@
-// Corner - how the Energy side is drawn: the morning sleep check-in, the curve in its tray, the three sleep figures,
+﻿// Corner - how the Energy side is drawn: the morning sleep check-in, the curve in its tray, the three sleep figures,
 // naps, the plan (a white "ticket") and the routines list. The model itself is in Energy.cs and Plan.cs.
 using System;
 using System.Collections.Generic;
@@ -7,6 +7,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
@@ -46,7 +47,7 @@ namespace Corner
             energyChip = new DockPanel { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(10, 1, 0, 0), Cursor = Cursors.Hand, Background = Brushes.Transparent };
             DockPanel.SetDock(energyDot, Dock.Left);
             energyChip.Children.Add(energyDot); energyChip.Children.Add(energyLine);
-            energyChip.MouseLeftButtonDown += (s, e) => { e.Handled = true; SetTab(1); };
+            energyChip.MouseLeftButtonDown += (s, e) => { e.Handled = true; CycleGenie(1); };
             Grid.SetColumn(energyChip, 1); rowGrid.Children.Add(energyChip);
             tabsRow = row;
             DockPanel.SetDock(row, Dock.Top); dock.Children.Add(row);
@@ -67,7 +68,7 @@ namespace Corner
             line = new Border { Height = 2, Background = T.Accent, Visibility = Visibility.Hidden };
             var sp = new StackPanel { Margin = new Thickness(0, 0, 16, -1), Cursor = Cursors.Hand, Background = Brushes.Transparent };
             sp.Children.Add(label); sp.Children.Add(line);
-            sp.MouseLeftButtonDown += (s, e) => { e.Handled = true; SetTab(index); };
+            sp.MouseLeftButtonDown += (s, e) => { e.Handled = true; CycleGenie(index); };
             return sp;
         }
 
@@ -189,7 +190,7 @@ namespace Corner
             if (sub != null) third.Children.Add(new TextBlock { Text = sub, FontSize = Z(10), Foreground = T.Muted, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center });
             sp.Children.Add(third);
             // the outline is see-through until the figure's own panel is open (the debt calculator)
-            var b = new Border { CornerRadius = new CornerRadius(Sp(18, 16)), Background = T.Field, BorderBrush = Brushes.Transparent, BorderThickness = new Thickness(1.5), Padding = new Thickness(PadX - 3.5, PadY - 3.5, PadX - 5.5, PadY - 5.5), Margin = new Thickness(Sp(4, 3), 0, Sp(4, 3), 0), Child = sp };
+            var b = new CardBorder { CornerRadius = new CornerRadius(Sp(18, 16)), Background = T.Field, BorderBrush = Brushes.Transparent, BorderThickness = new Thickness(1.5), Padding = new Thickness(PadX - 3.5, PadY - 3.5, PadX - 5.5, PadY - 5.5), Margin = new Thickness(Sp(4, 3), 0, Sp(4, 3), 0), Child = sp };
             if (click != null)
             {
                 b.Cursor = Cursors.Hand; b.ToolTip = "Click to correct";
@@ -198,13 +199,36 @@ namespace Corner
             return b;
         }
 
+        /// Energy now, 1 to 100%: the curve's level at this moment (0..1 in the model), with the zone's colour beside it.
+        FrameworkElement EnergyCounter(DateTime now)
+        {
+            int pct = (int)Math.Max(1, Math.Min(100, Math.Round(Calibration.Map(energy.AllAt(now), now) * 100))); // matched to your corrections (EnergyFeel.cs)
+            var box = new StackPanel { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(10, 0, 0, 0) };
+            Grid.SetColumn(box, 1);
+            var num = new TextBlock { FontWeight = FontWeights.SemiBold, Foreground = T.Text, HorizontalAlignment = HorizontalAlignment.Right };
+            num.Inlines.Add(new Run(pct.ToString()) { FontSize = Hd(Sp(22, 19)) });
+            num.Inlines.Add(new Run("%") { FontSize = Z(12), Foreground = T.Muted });
+            box.Children.Add(num);
+            num.Cursor = Cursors.Hand; num.Background = Brushes.Transparent;
+            num.MouseLeftButtonDown += (s, e) => { e.Handled = true; EditFeel(box, num, pct); }; // type how you feel (EnergyFeel.cs)
+            var label = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, -2, 0, 0) };
+            label.Children.Add(new Ellipse { Width = 6, Height = 6, Fill = ZoneBrush(now), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 1, 4, 0) });
+            label.Children.Add(new TextBlock { Text = "energy", FontSize = Z(10.5), Foreground = T.Muted });
+            box.Children.Add(label);
+            box.ToolTip = "Your energy right now. Click the number if it feels different";
+            return box;
+        }
+
         void DrawEnergy()
         {
             energyView.Children.Clear();
+            if (planHost != null) planHost.Children.Clear();
+            doneHost = null; doneCard = null;
             sect = energyView;
             // boxes start Side in from the panel's edge (SideMid on the side that faces the tasks column in Full Mode);
             // every block ends with a gap of GapY, which the last one gives back
-            energyView.Margin = new Thickness(SideMid, 0, Side, -GapY);
+            energyView.Margin = new Thickness(TaskR, 0, TaskL, -GapY); // the mirror of the tasks column
+            if (FullArranged) FocusOnTop(); // Full Mode: the next task and its timer sit above the chart (FullLayout.cs)
             chartPins.Clear();
             if (energy == null)
             {
@@ -224,8 +248,18 @@ namespace Corner
             string head = cut < 0 ? line : line.Substring(0, cut), rest = cut < 0 ? "" : line.Substring(cut + 3);
             if (rest.Length > 0) rest = char.ToUpper(rest[0]) + rest.Substring(1);
             if (energy.BedPush >= 5) rest += (rest.Length > 0 ? " · " : "") + "late nap: wind-down about " + (int)Math.Round(energy.BedPush) + " min later";
-            sect.Children.Add(new TextBlock { Text = head, FontSize = Hd(Sp(18, 16)), FontWeight = FontWeights.SemiBold, Foreground = T.Text, TextWrapping = TextWrapping.Wrap });
-            sect.Children.Add(new TextBlock { Text = rest, FontSize = Z(11.5), Foreground = T.Muted, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 1, 0, Sp(8, 5)), Visibility = rest.Length > 0 ? Visibility.Visible : Visibility.Collapsed });
+            // the words on the left; on the right, the curve's value right now as a percentage (the model's 0..1 level)
+            var top = new Grid { Margin = new Thickness(0, 0, 0, Sp(8, 5)) };
+            top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var words = new StackPanel();
+            words.Children.Add(new TextBlock { Text = head, FontSize = Hd(Sp(18, 16)), FontWeight = FontWeights.SemiBold, Foreground = T.Text, TextWrapping = TextWrapping.Wrap });
+            words.Children.Add(new TextBlock { Text = rest, FontSize = Z(11.5), Foreground = T.Muted, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 1, 0, 0), Visibility = rest.Length > 0 ? Visibility.Visible : Visibility.Collapsed });
+            top.Children.Add(words);
+            top.Children.Add(EnergyCounter(now));
+            sect.Children.Add(top);
+            if (feelAsk != null) sect.Children.Add(FeelAskBox()); // after a number was typed into the counter (EnergyFeel.cs)
+            else if (feelAfter != null) { var fa = FeelAfterBox(); if (fa != null) sect.Children.Add(fa); } // and what may follow from it
 
             // as wide as the room inside the tray
             double H = Sp(104, 86), W = (full ? FullW / 2 : CardW) - energyView.Margin.Left - energyView.Margin.Right - 2 * PadX, yTop = 26;
@@ -267,10 +301,10 @@ namespace Corner
             {
                 if (z == null) continue;
                 double zx = X(z.From), zw = Math.Max(1, X(z.To) - zx);
-                c.Children.Add(new Polygon { Points = area, Fill = z.Peak ? (Brush)T.Accent : T.Strong, Clip = new RectangleGeometry(new Rect(zx, 0, zw, H)) });
+                c.Children.Add(new Polygon { Points = area, Fill = z.Peak ? (Brush)T.Accent : T.Dip, Clip = new RectangleGeometry(new Rect(zx, 0, zw, H)) });
                 if (zw >= 28)
                 {
-                    var zl = new TextBlock { Text = z.Peak ? "peak" : "dip", FontSize = Z(9), Foreground = z.Peak ? (Brush)T.OnAccent : T.OnStrong };
+                    var zl = new TextBlock { Text = z.Peak ? "peak" : "dip", FontSize = Z(9), Foreground = z.Peak ? (Brush)T.OnAccent : T.OnDip };
                     pin(zl, zx, zx + zw); Canvas.SetTop(zl, H - 15); names.Add(zl);
                 }
             }
@@ -308,6 +342,7 @@ namespace Corner
             }
             AddChart(c, view, W, H, Y, now); // the cursor, and scrolling in the corner panel (UiSleep.cs)
             EndCard();
+            if (!full) return; // the corner panel is the chart alone; the figures, naps, rating, the plan and routines are in Full Mode
 
             // slept / debt / need
             var night = energy.Last;
@@ -319,14 +354,30 @@ namespace Corner
             bool debt = energy.DebtHours >= 0.25;
             Grid last;
             var stats = new UniformGrid { Columns = 3, Margin = new Thickness(-Sp(4, 3), 0, -Sp(4, 3), GapY) };
+            string[] statIcons = { "M11.5,8.5 A5,5 0 0 1 5.5,2.5 A5,5 0 1 0 11.5,8.5 Z", "M7,2 A5,5 0 1 1 6.99,2 Z M4.5,7 H9.5", "M1.5,10.5 V4.5 M1.5,8 H12.5 V10.5 M12.5,8 V6.5 A2,2 0 0 0 10.5,4.5 H6 V8" };
+            if (full)
+            {   // Full Mode: the three figures are icons until clicked; each opens its own box underneath, and closes it again
+                string[] statNames = { "Slept", "Debt", "Need" };
+                var icons = new UniformGrid { Columns = 3, Margin = new Thickness(-Sp(4, 3), 0, -Sp(4, 3), GapY) };
+                for (int i = 0; i < 3; i++)
+                {
+                    int k = i;
+                    var chip = RoundChip(statIcons[i], statOpen[i], statNames[i], () => { statOpen[k] = !statOpen[k]; if (k == 1 && !statOpen[1]) debtOpen = false; DrawEnergy(); });
+                    chip.HorizontalAlignment = HorizontalAlignment.Center; chip.Height = 30; chip.Margin = new Thickness(0); // each in the middle of its third
+                    icons.Children.Add(chip);
+                }
+                sect.Children.Add(icons);
+            }
+            Func<int, bool> showStat = i => !full || statOpen[i];
+            Action<int, UIElement> addStat = (i, el) => stats.Children.Add(showStat(i) ? el : new Border()); // (an empty place keeps each box under its icon)
             var slept = Stat("M11.5,8.5 A5,5 0 0 1 5.5,2.5 A5,5 0 1 0 11.5,8.5 Z", "Slept", DurShort(night.Hours), Slim ? sleptShort : sleptSub, () => OpenCheckIn(true), out last);
             slept.ToolTip = sleptSub + "  ·  click to correct";
-            stats.Children.Add(slept);
+            addStat(0, slept);
             var debtCard = Stat("M7,2 A5,5 0 1 1 6.99,2 Z M4.5,7 H9.5", "Debt", debt ? DurShort(energy.DebtHours) : "none", (Slim ? "" : "over ") + EnergyModel.DebtNights + " nights", null, out last);
             debtCard.ToolTip = "Sleep debt calculator"; debtCard.Cursor = Cursors.Hand;
             debtCard.MouseLeftButtonDown += (s2, e2) => { e2.Handled = true; debtOpen = !debtOpen; DrawEnergy(); };
             if (debtOpen) debtCard.BorderBrush = T.Strong; // outlined while its calculator is open underneath
-            stats.Children.Add(debtCard);
+            addStat(1, debtCard);
             var need = Stat("M1.5,10.5 V4.5 M1.5,8 H12.5 V10.5 M12.5,8 V6.5 A2,2 0 0 0 10.5,4.5 H6 V8", "Need", DurShort(energy.Need), null, null, out last);
             Action<double> step = dv => { Settings.Set("SleepNeed", Math.Max(5, Math.Min(11, energy.Need + dv))); RefreshEnergy(false); };
             var steps = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
@@ -335,10 +386,10 @@ namespace Corner
             steps.Children.Add(minus); steps.Children.Add(plus);
             last.Children.Add(steps); // the last line, where the other two have text
             if (needHint != null) need.ToolTip = needHint.Note; // where the estimate from your check-ins stands
-            stats.Children.Add(need);
-            sect.Children.Add(stats);
+            addStat(2, need);
+            if (!full || statOpen.Any(x => x)) sect.Children.Add(stats);
             DrawNeedHint(now); // a sleep need suggested from your check-ins, once there is one
-            if (debtOpen) DrawDebt(now); // the sleep debt calculator (UiSleep.cs)
+            if (debtOpen && showStat(1)) DrawDebt(now); // the sleep debt calculator (UiSleep.cs)
 
             DrawNaps(now);
             if (!full) return; // the corner panel stops here; settings, the plan and routines are in Full Mode only
@@ -437,7 +488,7 @@ namespace Corner
                 g.Children.Add(remove);
                 sect.Children.Add(new PillBorder { Background = T.Field, Padding = new Thickness(PadX, 3, PadX - Sp(6, 5), 3), Margin = new Thickness(0, 0, 0, GapY), Child = g });
             }
-            if (napOffer && full) // the plan it leads to is only shown in Full Mode
+            if (napOffer && full && !PriorityMode) // the plan it leads to is only shown in Full Mode (and by priority there are no times to move)
             {
                 var g = new Grid { Margin = new Thickness(PadX, 0, 0, GapY) };
                 g.Children.Add(new TextBlock { Text = "Re-plan what hasn't started?", FontSize = Z(11.5), Foreground = T.Muted, VerticalAlignment = VerticalAlignment.Center });
@@ -488,37 +539,39 @@ namespace Corner
 
         // ------------------------------------------------------------ Plan
 
-        /// The plan is a white card cut like a ticket: a lime strip down its left edge names it (the text runs upwards),
-        /// and once there is a proposal a pale-lime foot holds the key to the ticks.
+        /// The plan is a plain white card, the same on both sides: the time it fills and its buttons, then (once there is
+        /// a proposal) the proposed tasks and a pale-lime foot with the key to the ticks. An applied plan is named on
+        /// the task list instead, by the upright strip beside the tasks it placed (FullLayout.cs).
         void DrawPlan(DateTime now)
         {
-            string name = (proposal == null ? "Today's plan" : "Proposed plan").ToUpperInvariant();
             double r = Radius;
             var body = new StackPanel { Margin = new Thickness(PadX, PadY, PadX, PadY) };
-            var foot = new Border { Background = T.Soft, CornerRadius = new CornerRadius(0, 0, r, 0), Padding = new Thickness(PadX, 6, PadX, 7), Visibility = Visibility.Collapsed };
-            var right = new DockPanel { LastChildFill = true };
-            DockPanel.SetDock(foot, Dock.Bottom); right.Children.Add(foot); right.Children.Add(body);
-            var strip = new Border
-            {
-                Width = 30, Background = T.Accent, CornerRadius = new CornerRadius(r, 0, 0, r),
-                Child = new TextBlock { Text = name, FontSize = Z(10), FontWeight = SemiSmall, Foreground = T.OnAccent, LayoutTransform = new RotateTransform(-90), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 14, 0, 12) }
-            };
-            var ticket = new Grid { MinHeight = TextW(name, Z(10), SemiSmall) + 26 }; // tall enough for its name
-            ticket.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            ticket.ColumnDefinitions.Add(new ColumnDefinition());
-            ticket.Children.Add(strip);
-            Grid.SetColumn(right, 1); ticket.Children.Add(right);
-            energyView.Children.Add(new RimBorder { CornerRadius = new CornerRadius(r), Background = T.Field, Margin = new Thickness(0, 0, 0, GapY), Child = ticket });
+            var foot = new Border { Background = T.Soft, CornerRadius = new CornerRadius(0, 0, r, r), Padding = new Thickness(PadX, 6, PadX, 7), Visibility = Visibility.Collapsed };
+            var whole = new DockPanel { LastChildFill = true };
+            DockPanel.SetDock(foot, Dock.Bottom); whole.Children.Add(foot); whole.Children.Add(body);
+            (FullArranged ? (Panel)planHost : energyView).Children.Add(new RimBorder { CornerRadius = new CornerRadius(r), Background = T.Field, Margin = new Thickness(0, 0, 0, GapY), Child = whole }); // Full Mode: under the tasks (FullLayout.cs)
+            sect = body;
+            if (PriorityMode)
+            {   // "Plan by: Priority": what comes after what, with no clock times (Work.cs)
+                DrawOrderPlan();
+                EndCard();
+                DrawRoutines();
+                if (full) DrawDoneCard();
+                return;
+            }
+            if (proposal != null) { var cap = Caps("Proposed plan"); cap.Margin = new Thickness(0, 0, 0, 6); sect.Children.Add(cap); }
+
+            // the time Plan fills on the left, what can be done on the right
             sect = body;
 
             // the time Plan fills on the left, what can be done on the right
-            var head = new Grid { Margin = new Thickness(0, 0, 0, 6) };
+            var head = new Grid { Margin = new Thickness(0, 0, 0, proposal != null ? 6 : 0) };
             head.ColumnDefinitions.Add(new ColumnDefinition());
             head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var planNow = now; var planEnd = Planner.Until(energy, planNow);
             string window = planNow >= planEnd ? "Too close to bedtime to plan" : "Plans from " + (planNow < energy.Wake ? EnergyDay.Clock(energy.Wake) : "now") + " to " + EnergyDay.Clock(planEnd);
             head.Children.Add(new TextBlock { Text = window, FontSize = Z(11.5), Foreground = T.Muted, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) });
-            var acts = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Top };
+            var acts = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             Action<FrameworkElement> put = b => { b.Margin = new Thickness(4, 0, 0, 0); acts.Children.Add(b); };
             if (proposal == null)
             {
@@ -527,7 +580,7 @@ namespace Corner
             }
             else
             {
-                put(Btn("Discard", 2, () => { proposal = null; DrawEnergy(); }, 1));
+                put(Btn("Discard", 2, () => { proposal = null; planSplit.Clear(); planKeep.Clear(); DrawEnergy(); }, 1));
                 if (proposal.Any(x => x.Placed)) put(Btn("Apply", 0, ApplyPlan, 1));
             }
             Grid.SetColumn(acts, 1); head.Children.Add(acts);
@@ -555,7 +608,7 @@ namespace Corner
                     g.Children.Add(new Border { Width = 4, Height = 14, CornerRadius = new CornerRadius(2), Background = it.Placed ? ZoneBrush(it.Start) : T.Ctl, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center });
                     var time = new TextBlock { Text = it.Placed ? EnergyDay.Clock(it.Start) : "—", FontSize = Z(11.5), FontWeight = SemiSmall, Foreground = it.Placed ? (Brush)T.Text : T.Faint, VerticalAlignment = VerticalAlignment.Center };
                     Grid.SetColumn(time, 1); g.Children.Add(time);
-                    var title = new TextBlock { Text = it.Title, FontSize = Z(12), Foreground = it.Placed ? (Brush)T.Text : T.Muted, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+                    var title = new TextBlock { Text = it.SplitOf > 0 ? SplitTitle(it.Title, it.SplitOf) : it.Title, FontSize = Z(12), Foreground = it.Placed ? (Brush)T.Text : T.Muted, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
                     Grid.SetColumn(title, 2); g.Children.Add(title);
                     var bits = new List<string>();
                     if (it.Level != null) bits.Add(TaskTags.Short(it.Level));
@@ -564,6 +617,7 @@ namespace Corner
                     var tag = new TextBlock { Text = it.Placed ? string.Join(" · ", bits) : "no room today", FontSize = Z(10.5), Foreground = T.Muted, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
                     Grid.SetColumn(tag, 3); g.Children.Add(tag);
                     sect.Children.Add(g);
+                    if ((it.CanSplit && !planKeep.Contains(it.Id)) || it.SplitOf == 1) sect.Children.Add(SplitAsk(it));
                 }
                 if (proposal.Any(x => x.Placed))
                 {   // the key, in the ticket's foot; the ticks are outlined so the lime one shows on the pale lime
@@ -580,6 +634,40 @@ namespace Corner
             }
             EndCard();
             DrawRoutines();
+            if (full) DrawDoneCard(); // Full Mode: the done tasks under the routines (FullLayout.cs)
+        }
+
+        /// Under a high task's row in the proposed plan: split it across both peaks, or keep it as one session?
+        FrameworkElement SplitAsk(PlanItem it)
+        {
+            var box = new Border { CornerRadius = new CornerRadius(10), Background = T.Soft, Padding = new Thickness(10, 7, 8, 8), Margin = new Thickness(12, 1, 0, 6) };
+            string id = it.Id;
+            if (it.SplitOf == 1)
+            {   // already split: one line, with the way back
+                var row = new DockPanel();
+                var keep1 = Btn("Keep as one", 2, () => SplitInPlan(id, false), 1);
+                ((FrameworkElement)keep1).Margin = new Thickness(8, 0, 0, 0);
+                DockPanel.SetDock(keep1, Dock.Right); row.Children.Add(keep1);
+                row.Children.Add(new TextBlock { Text = "Split across both peaks.", FontSize = Z(11.5), Foreground = T.Muted, VerticalAlignment = VerticalAlignment.Center });
+                box.Child = row; return box;
+            }
+            var col = new StackPanel();
+            string msg = it.Placed
+                ? "Doesn't fit in what's left of your first peak as one session, so it went to " + EnergyDay.Clock(it.Start) + ". Split it in two instead?"
+                : "No room for it as one session. Split it in two?";
+            col.Children.Add(new TextBlock { Text = msg, FontSize = Z(11.5), Foreground = T.Text, TextWrapping = TextWrapping.Wrap });
+            col.Children.Add(new TextBlock
+            {
+                Text = TaskTags.Len(it.SplitA) + " at " + EnergyDay.Clock(it.SplitAt1) + "  ·  " + TaskTags.Len(it.SplitB) + " at " + EnergyDay.Clock(it.SplitAt2),
+                FontSize = Z(11), FontWeight = SemiSmall, Foreground = T.Muted, Margin = new Thickness(0, 2, 0, 0)
+            });
+            var acts = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 6, 0, 0) };
+            var split = Btn("Split in two", 0, () => SplitInPlan(id, true), 1);
+            ((FrameworkElement)split).Margin = new Thickness(4, 0, 0, 0);
+            acts.Children.Add(Btn("Keep as one", 2, () => SplitInPlan(id, false), 1)); acts.Children.Add(split);
+            col.Children.Add(acts);
+            box.Child = col;
+            return box;
         }
 
         // ------------------------------------------------------------ the Routines list
@@ -600,7 +688,11 @@ namespace Corner
                 rhead.Children.Add(addAll); rhead.Height = double.NaN;
             }
             sect.Children.Add(rhead);
-            if (!routinesOpen) { EndCard(); return; }
+            if (!routinesOpen)
+            {   // closed, it is one slim line: no taller than the buttons above it
+                ((Border)energyView.Children[energyView.Children.Count - 1]).Padding = new Thickness(PadX, Sp(5, 4), PadX, Sp(5, 4));
+                EndCard(); return;
+            }
 
             for (int i = 0; i < all.Count; i++)
             {

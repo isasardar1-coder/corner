@@ -1,4 +1,4 @@
-// Corner - energy check-ins (1 to 10), tuning the curve from them, and Full Mode.
+﻿// Corner - energy check-ins (1 to 10), tuning the curve from them, and Full Mode.
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -91,12 +91,13 @@ namespace Corner
     // ---------------------------------------------------------------- tuning the curve from the check-ins
 
     /// Learns where the model is regularly too high or too low for you, by time since waking,
-    /// and returns a small correction that is added to the curve. Nothing is changed until there are enough check-ins.
+    /// and returns a small correction. The curve takes it at each peak and at the dip only, and eases between them,
+    /// so it stays smooth (EnergyModel.Reshape in Energy.cs). Nothing is changed until there are enough check-ins.
     public static class Tuning
     {
         public const int MinRatings = 12;      // check-ins needed before any correction is applied
         public const int WindowDays = 60;      // only check-ins from the last this-many days are used
-        public const double Sigma = 0.75;      // hours; how far one check-in's influence spreads along the day
+        public const double Sigma = 1.25;      // hours; how far one check-in's influence spreads along the day (a peak or the dip is a few hours wide)
         public const double Shrink = 1.5;      // caution: a spot needs about this many nearby check-ins before it moves half way
         public const double MinCorrelation = 0.3; // below this your scores do not track the model enough to fit a slope
         public const double MaxShift = 0.15;   // the most the curve may be moved at any point (the curve spans roughly 0.3)
@@ -223,12 +224,12 @@ namespace Corner
             Border first = null, last = null;
             foreach (var b in boxes)
             {
-                if (b == null || b.Visibility != Visibility.Visible) continue;
+                if (b == null || b.Visibility != Visibility.Visible || (b == focusBox && FullArranged)) continue;
                 if (first == null) first = b;
                 last = b;
             }
             foreach (var b in boxes)
-                if (b != null) b.Margin = new Thickness(Side, alone && b == first ? Side : 0, SideMid, alone && b == last ? Side : GapY);
+                if (b != null && !(b == focusBox && FullArranged)) b.Margin = new Thickness(TaskL, alone && b == first ? Side : 0, TaskR, alone && b == last ? Side : GapY);
         }
 
         // Layout under the header: everything sits in the left column; in Full Mode the energy view moves to a second column.
@@ -369,7 +370,7 @@ namespace Corner
         void LoadLook()
         {
             fullScale = Math.Max(0.7, Math.Min(1.6, Settings.Get("FullScale", 1)));
-            T.Use((int)Settings.Get("Skin", 0)); // Sage or Glass (Glass.cs)
+            T.Use((int)Settings.Get("Skin", 1)); // Glass unless another skin was chosen (Glass.cs)
             var gilroy = FindGilroy(false); UiItalic = FindGilroy(true);
             FontFamily = UiFont = gilroy ?? new FontFamily("Segoe UI");
             FontK = gilroy != null ? GilroyFit : 1; HasSemi = true;
@@ -426,21 +427,52 @@ namespace Corner
         void EnterFull()
         {
             if (full) { Activate(); return; }
+            if (enteringFull) return;
+            GrabMini(); genieBack = false; // the corner panel's picture, for the warp (Launch.cs)
+            if (!HoldMini()) { SwitchToFull(); return; }
+            // The picture is on top now. Empty the panel under it and let that be drawn before the window is hidden:
+            // a window shows its last frame for an instant when it comes back, and that frame must be empty.
+            enteringFull = true;
+            After(40, () =>
+            {
+                card.BeginAnimation(OpacityProperty, null); card.Opacity = 0;
+                After(30, () => { enteringFull = false; if (!full) SwitchToFull(); else DropHold(); });
+            });
+        }
+
+        bool enteringFull;
+
+        void SwitchToFull()
+        {
             shown = false; gen++; Hide();
             full = true; paused = false; promptOnly = false; tray.Text = "Corner";
             var h = new WindowInteropHelper(this).EnsureHandle();
             SetWindowLong(h, -20, (GetWindowLong(h, -20) & ~0x80) | 0x40000); // an app window while in Full Mode
             ShowInTaskbar = true; Topmost = false;
-            if (Icon == null)
-                try { Icon = Imaging.CreateBitmapSourceFromHIcon(tray.Icon.Handle, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions()); } catch { }
-            ShowPanel(0);
+            ApplyFullIcon(); // the hot-corner picture, on the taskbar (HotIcon.cs)
+            switchWarp = true; ShowPanel(0); switchWarp = false;
             Activate();
+            WarpIntoFull(); // out of the corner panel (Launch.cs)
         }
 
         void ExitFull()
         {
             if (!full) return;
-            full = false; shown = false; gen++;
+            var warpBack = WarpOutOfFull(); // back down into its corner (Launch.cs)
+            full = false; shown = false; int g = ++gen;
+            card.BeginAnimation(OpacityProperty, null);
+            if (warpBack != null)
+            {   // the warp on top first; then the window empties under it and goes (see EnterFull)
+                warpBack();
+                After(40, () => { if (gen != g) return; card.Opacity = 0; After(30, () => { if (gen == g) LeaveFull(); }); });
+                return;
+            }
+            card.Opacity = 0;
+            LeaveFull();
+        }
+
+        void LeaveFull()
+        {
             Hide();
             var h = new WindowInteropHelper(this).EnsureHandle();
             SetWindowLong(h, -20, (GetWindowLong(h, -20) & ~0x40000) | 0x80); // back to a tool window: off the taskbar and Alt+Tab

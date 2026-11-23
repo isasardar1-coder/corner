@@ -48,10 +48,11 @@ namespace Corner
         {
             obStep = step;
             var card = new Grid();
-            var bg = new Border { CornerRadius = new CornerRadius(26), Background = T.Glass ? T.GlassBase : (Brush)T.Bg, BorderBrush = T.Edge, BorderThickness = new Thickness(T.Glass ? 0 : 1),
-                Effect = new DropShadowEffect { BlurRadius = 40, ShadowDepth = 12, Direction = 270, Color = T.Glass ? T.GlassShadow : Color.FromRgb(60, 54, 34), Opacity = 0.28 } };
+            var bg = new Border { CornerRadius = new CornerRadius(26), Background = T.Glass ? T.GlassBase : (Brush)T.Bg, BorderBrush = T.Edge, BorderThickness = new Thickness(T.Glass ? 0 : 1) };
+            card.Children.Add(new Shade { Radius = 26, Blur = 40, Depth = 12, Tint = T.Glass ? T.GlassShadow : Color.FromRgb(60, 54, 34), Strength = 0.28 }); // the shadow under the box (Shade.cs)
             card.Children.Add(bg);
-            if (T.Glass) card.Children.Add(new Border { CornerRadius = new CornerRadius(26), Background = T.GlassTint, BorderBrush = T.GlassRim, BorderThickness = new Thickness(1), IsHitTestVisible = false });
+            if (T.Glass) card.Children.Add(new GlassSheet { Radius = 26, Plain = true }); // frosted: the welcome window takes no picture of the screen (Glass.cs)
+            else if (Mat.On) { bg.BorderThickness = new Thickness(0); card.Children.Add(new GlassSheet { Radius = 26 }); } // Metal, Ceramic, Paper: the sheet's grain and edge (Material.cs)
 
             var layout = new Grid { Margin = new Thickness(34, 26, 34, 28) };
             layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -425,8 +426,8 @@ namespace Corner
 
         FrameworkElement ObButton(string text, bool main, Action click)
         {
-            var label = new TextBlock { Text = text, FontSize = Fk(14), FontWeight = main ? FontWeights.SemiBold : FontWeights.Normal, Foreground = main ? T.OnAccent : T.Text };
-            Brush rest = main ? (Brush)T.Accent : T.Lift;
+            var label = new TextBlock { Text = text, FontSize = Fk(14), FontWeight = main ? FontWeights.SemiBold : FontWeights.Normal, Foreground = main ? T.OnMain : T.Text };
+            Brush rest = main ? (Brush)T.Main : T.Lift;
             var b = new PillBorder { Background = rest, Padding = new Thickness(main ? 26 : 18, 11, main ? 26 : 18, 12), Child = label, Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center, RenderTransformOrigin = new Point(0.5, 0.5) };
             var press = new ScaleTransform(1, 1); b.RenderTransform = press;
             b.MouseEnter += (s, e) => { if (main) b.Opacity = 0.9; else b.Background = T.Field; };

@@ -1,5 +1,0 @@
-<Solution>
-  <Project Path="Corner.Core/Corner.Core.csproj" />
-  <Project Path="Corner.Mac/Corner.Mac.csproj" />
-  <Project Path="Corner.Tests/Corner.Tests.csproj" />
-</Solution>

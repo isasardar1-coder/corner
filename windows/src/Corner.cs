@@ -1,4 +1,4 @@
-// Corner - a to-do list that lives in the top-right corner of the screen.
+﻿// Corner - a to-do list that lives in the top-right corner of the screen.
 // Built with the C# compiler that ships with Windows (.NET Framework 4.x, C# 5), see build.ps1.
 using System;
 using System.Collections.Generic;
@@ -44,6 +44,7 @@ namespace Corner
         [DataMember(EmitDefaultValue = false)] public string Routine;    // Id of the routine this task came from
         [DataMember(EmitDefaultValue = false)] public string RoutineDay; // the day it was added for
         [DataMember(EmitDefaultValue = false)] public int Part;          // 1..n for a routine's check-ins
+        [DataMember(EmitDefaultValue = false)] public double Worked;     // seconds worked on it so far, from its timer (Work.cs)
 
         const string Fmt = "yyyy-MM-ddTHH:mm";
 
@@ -377,66 +378,101 @@ namespace Corner
 
     // ---------------------------------------------------------------- colours
 
-    /// Corner has two skins, chosen in Settings. Each colour is named for what it is used for, so a change here changes
-    /// every place that plays that part; each has a value for Sage, then one for Glass.
+    /// Corner has five skins, chosen in Settings. Each colour is named for what it is used for, so a change here changes
+    /// every place that plays that part; each has a value for Sage, for Glass, for Glass when it is dark, and then for
+    /// Metal, Ceramic and Paper (whose depth is drawn in Material.cs).
     ///   Sage:  a pale sage panel with darker trays, white cards and pills, forest green for whatever is chosen or
     ///          switched on, and lime for the main action, the running timer and the peaks.
-    ///   Glass: the panel is a frosted picture of whatever is behind it (Glass.cs) under a pale tint; trays, cards and
-    ///          pills are layers of translucent white on it, each with a bright hairline rim.
+    ///   Glass: after the Liquid Glass of iPadOS 26. The panel is clear glass over a blurred picture of whatever is
+    ///          behind it (Glass.cs); trays, cards and pills are thin layers of white on it, each with a bright rim.
+    ///          Over dark things the glass is dark and the text white (T.Dark, which Glass.cs sets as a panel opens).
     /// The brushes are never replaced: a change of skin changes their colours, and everything drawn with them follows.
     static class T
     {
-        public static readonly string[] Names = { "Sage", "Glass" };
+        public static readonly string[] Names = { "Sage", "Glass", "Metal", "Ceramic", "Paper" };
         public static int Skin;
+        public static bool Dark; // Glass only: the glass is dark, because what is behind it is
         public static bool Glass { get { return Skin == 1; } }
 
         static readonly List<SolidColorBrush> brushes = new List<SolidColorBrush>();
         static readonly List<string[]> values = new List<string[]>();
         public static Color C(string hex) { return (Color)ColorConverter.ConvertFromString(hex); }
-        static SolidColorBrush B(string sage, string glass) { var b = new SolidColorBrush(C(sage)); brushes.Add(b); values.Add(new[] { sage, glass }); return b; }
+        static SolidColorBrush B(string sage, string glass, string dark, string metal, string ceramic, string paper) { var b = new SolidColorBrush(C(sage)); brushes.Add(b); values.Add(new[] { sage, glass, dark, metal, ceramic, paper }); return b; }
 
         public static readonly SolidColorBrush
-            // surfaces, from the back forwards
-            Bg = B("#E8ECDB", "#9EEDF7FA"),         // the panel (Glass: the tint's colour; the panel itself is drawn in Glass.cs)
-            Edge = B("#D3D9C2", "#FFD9E7F0"),       // the panel's own edge, and a tooltip's
-            Tray = B("#D9DFC7", "#73C3D0DD"),       // a box a step apart from the panel: the next task, the check-ins, the chart
-            Field = B("#FFFFFF", "#D1F7FAFD"),      // the brightest surface: cards, chips, pills, boxes to type in
-            Lift = B("#EEF1E4", "#B8F7FBFF"),       // a control sitting on a tray, and a Field chip under the mouse
-            Raised = B("#E8ECDB", "#E6E4EEF4"),     // a control sitting on a Field card
-            Ctl = B("#C6CFB1", "#999AAFBD"),        // tracks, rails, empty bars, the chart between its zones
-            Line = B("#E3E7D6", "#C9C9D9E3"),       // a thin rule on a Field card
-            Hover = B("#0F16281D", "#301F5268"),    // a task row under the mouse
-            Ring = B("#D9DFC7", "#B3A9BFD0"),       // the empty part of the progress ring in the header
-            Pop = B("#FFFFFF", "#F7F7FAFD"),        // a tooltip: on its own over anything, so never see-through
+            // surfaces, from the back forwards (Glass: how much white each lays over what is under it)
+            Bg = B("#E8ECDB", "#38FFFFFF", "#14FFFFFF", "#B2B4B6", "#DCDFCB", "#C9E0F1"),         // the panel (Glass: the sheet itself is drawn in Glass.cs)
+            Edge = B("#D3D9C2", "#FFD4E2EE", "#FF39455E", "#8E9093", "#C6CAB3", "#B3CFE3"),       // the panel's own edge, and a tooltip's
+            Tray = B("#D9DFC7", "#40FFFFFF", "#14FFFFFF", "#A3A5A8", "#CFD3BC", "#BBD4E7"),       // a box a step apart from the panel: the next task, the check-ins, the chart
+            Field = B("#FFFFFF", "#57FFFFFF", "#1CFFFFFF", "#EDEDEE", "#F0EEE7", "#F5F4F2"),      // the brightest surface: cards, chips, pills, boxes to type in
+            Lift = B("#EEF1E4", "#6BFFFFFF", "#26FFFFFF", "#F6F6F7", "#F6F4EE", "#FBFAF9"),       // a control sitting on a tray, and a Field chip under the mouse
+            Raised = B("#E8ECDB", "#5CFFFFFF", "#21FFFFFF", "#E1E2E4", "#E6E6D8", "#DDE9F3"),     // a control sitting on a Field card
+            Ctl = B("#C6CFB1", "#2E16304A", "#3DFFFFFF", "#C4C6C9", "#C3C9AE", "#A9C4D9"),        // tracks, rails, empty bars, the chart between its zones
+            Line = B("#E3E7D6", "#2416304A", "#26FFFFFF", "#D9DADC", "#E0E0D2", "#DFE7EE"),       // a thin rule on a Field card
+            Hover = B("#0F16281D", "#3DFFFFFF", "#1FFFFFFF", "#14000000", "#0F16281D", "#14204868"),    // a task row under the mouse
+            Ring = B("#D9DFC7", "#3316304A", "#3DFFFFFF", "#D0D2D5", "#D5D9C3", "#B5CEE0"),       // the empty part of the progress ring in the header
+            Pop = B("#FFFFFF", "#F7F4F8FC", "#F71B2433", "#FFFFFF", "#FBFAF6", "#FFFFFF"),        // a tooltip: on its own over anything, so never see-through
             // text; all three are readable on the panel, on a tray and on a card
-            Text = B("#141A12", "#18232D"), Muted = B("#535C4B", "#465564"), Faint = B("#586150", "#4D5C6A"),
-            // the dark colour: the next task's timer, whatever is chosen or on, the dip, and the prompts that need an answer
-            Strong = B("#16281D", "#F21A2A38"), OnStrong = B("#FFFFFF", "#F8FCFF"), OnStrongSoft = B("#C9D3BE", "#D2E0EA"), StrongLine = B("#7C8C7D", "#A77E9AAA"), StrongLift = B("#24392C", "#A8385266"),
+            Text = B("#141A12", "#0F1822", "#FFFFFF", "#121416", "#141A12", "#14202B"), Muted = B("#535C4B", "#D6142438", "#D1FFFFFF", "#3F4347", "#4E5746", "#44566A"), Faint = B("#586150", "#BD142438", "#B3FFFFFF", "#4A4E53", "#566050", "#4F6074"),
+            // the strong colour: the next task's timer, whatever is chosen or on, and the prompts that need an answer.
+            // Dark in Sage and on light glass; on dark glass it is white, with dark text on it.
+            Strong = B("#16281D", "#EB132A40", "#E0F4F8FF", "#0F2416", "#132717", "#1E3721"), OnStrong = B("#FFFFFF", "#FFFFFF", "#0E1A26", "#FFFFFF", "#FFFFFF", "#FFFFFF"), OnStrongSoft = B("#C9D3BE", "#CFE3F0", "#B8152433", "#C3CEC4", "#C9D3BE", "#C5D2C6"), StrongLine = B("#7C8C7D", "#73BFE6F2", "#59152433", "#6F8273", "#7C8C7D", "#7E9482"), StrongLift = B("#24392C", "#33FFFFFF", "#1F152433", "#1F3A28", "#24392C", "#2F4C34"),
+            Dip = B("#16281D", "#EB132A40", "#A6050A12", "#0F2416", "#132717", "#1E3721"), OnDip = B("#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF"), // the dip on the chart: dark in every skin
             // the accent: the main action, a running timer, the peaks. Soft is its pale form: today, the row being timed, footers
-            Accent = B("#B4C12A", "#A9D5FF"), OnAccent = B("#141A12", "#142638"), Soft = B("#EEF2B4", "#CDE1F2FF"),
-            Sand = B("#CDC6AB", "#CCD8D5C9"),       // the hours of expected sleep on the chart
-            Danger = B("#A8401F", "#C04435"), DangerSoft = B("#F4DDD3", "#DDF3D7D4"); // overdue, and nothing else
+            Accent = B("#B4C12A", "#DEFFFFFF", "#D9F4F8FF", "#5F656B", "#BECB2B", "#3E79AF"), OnAccent = B("#141A12", "#0F1822", "#0E1A26", "#FFFFFF", "#141A12", "#FFFFFF"), Soft = B("#EEF2B4", "#94FFFFFF", "#42FFFFFF", "#9EA2A6", "#CFD94F", "#A9C6DD"),
+            AccentOn = B("#B4C12A", "#EDF3F7FB", "#1B2A3A", "#D9DCDF", "#C6D233", "#A9C6DD"),        // the accent seen on the strong colour: a prompt's caption, a switch's knob
+            // the main button ("Done", "Plan my day") and the chosen one of a set of tabs: the accent, except in Glass, where it is bright clear glass
+            Main = B("#B4C12A", "#CCFFFFFF", "#E0F4F8FF", "#5F656B", "#BECB2B", "#3E79AF"), OnMain = B("#141A12", "#0F1822", "#0E1A26", "#FFFFFF", "#141A12", "#FFFFFF"),
+            Knob = B("#FFFFFF", "#F5FFFFFF", "#F0FFFFFF", "#FFFFFF", "#FBFAF6", "#FFFFFF"),          // the knob of a switch that is off
+            Sand = B("#CDC6AB", "#59B4C0CC", "#33C9D3DA", "#C8CACD", "#C2C8AD", "#A3BFD6"),       // the hours of expected sleep on the chart
+            Danger = B("#A8401F", "#C4260F", "#FF8A75", "#A8321A", "#A8401F", "#B03A1E"), DangerSoft = B("#F4DDD3", "#73F2B5A8", "#4DFF6B55", "#F0D9D2", "#F3DDD2", "#F2DCD4"); // overdue, and nothing else
 
-        // ---- Glass only: the panel's layers over the picture of what is behind it, and the rim of everything on it
-        static readonly GradientStop rimTop = new GradientStop(Colors.Transparent, 0), rimEnd = new GradientStop(Colors.Transparent, 1);
-        /// The hairline round a box (RimBorder, Glass.cs): bright at the top, faint at the bottom; invisible in Sage.
-        public static readonly Pen RimPen = new Pen(new LinearGradientBrush(new GradientStopCollection { rimTop, rimEnd }, new Point(0, 0), new Point(0, 1)), 1);
-        const string RimTopGlass = "#B8FFFFFF", RimEndGlass = "#5FDFEAF2";
-        /// The panel's tint, a cool frost; and the light that falls on its top (a strip of fixed height, Glass.cs).
-        public static readonly Brush GlassTint = new LinearGradientBrush(C("#9EEDF7FA"), C("#9EF2F3F8"), 70);
-        public static readonly Brush GlassSheen = new LinearGradientBrush(C("#70FFFFFF"), C("#00FFFFFF"), 90);
-        public const double GlassSheenHeight = 54;
-        /// The panel's rim: light caught at the top left, lost along the sides, a little back at the bottom right.
-        public static readonly Brush GlassRim = new LinearGradientBrush(new GradientStopCollection
-            { new GradientStop(C("#D9FFFFFF"), 0), new GradientStop(C("#85F9FFFF"), 0.5), new GradientStop(C("#B6FFFFFF"), 1) }, new Point(0, 0), new Point(1, 1));
-        public static readonly Brush GlassBase = new SolidColorBrush(C("#E9EEF5")); // behind the tint when the screen cannot be read
-        public static Color GlassShadow = C("#101923"); public static double GlassShadowOpacity = 0.3;
+        // ---- Glass only: what the sheet of glass and the boxes on it are drawn with (Glass.cs). Like the colours
+        // above these are changed in place by Use; in Sage they are all fully transparent.
+        static SolidColorBrush Clear() { return new SolidColorBrush(Colors.Transparent); }
+        static GradientStop Stop(double at) { return new GradientStop(Colors.Transparent, at); }
+        static LinearGradientBrush Grad(Point from, Point to, GradientStop[] stops) { return new LinearGradientBrush(new GradientStopCollection(stops), from, to); }
 
-        public static void Use(int skin)
+        static readonly GradientStop[] boxRim = { Stop(0), Stop(0.5), Stop(1) }, sheetRim = { Stop(0), Stop(0.5), Stop(1) }, sheetRim2 = { Stop(0), Stop(0.5), Stop(1) }, gloss = { Stop(0), Stop(0.62) };
+        static readonly SolidColorBrush boxGlow = Clear(), veil = Clear(), glassBase = new SolidColorBrush(C("#DCE6F0"));
+        static readonly SolidColorBrush[] glow = { Clear(), Clear(), Clear(), Clear(), Clear(), Clear(), Clear() };
+
+        /// A box on the glass: the hairline round it (bright along the top, faint down the sides, some again at the
+        /// bottom), the soft glow just inside that, and the gloss across the upper half of a pill.
+        public static readonly Pen RimPen = new Pen(Grad(new Point(0, 0), new Point(0, 1), boxRim), 1);
+        public static readonly Pen BoxGlowPen = new Pen(boxGlow, 2);
+        public static readonly Brush Gloss = Grad(new Point(0, 0), new Point(0, 1), gloss);
+        /// The sheet: its thin veil, what is under it when the screen cannot be read, the glow that fades in from its
+        /// edge (one pen a unit, outermost first), and its two hairlines, lit from the top left.
+        public static readonly Brush GlassVeil = veil, GlassBase = glassBase;
+        public static readonly Pen[] GlowPens = { new Pen(glow[0], 1.2), new Pen(glow[1], 1.2), new Pen(glow[2], 1.2), new Pen(glow[3], 1.2), new Pen(glow[4], 1.2), new Pen(glow[5], 1.2), new Pen(glow[6], 1.2) };
+        public static readonly Pen SheetRimPen = new Pen(Grad(new Point(0, 0), new Point(1, 1), sheetRim), 1.1);
+        public static readonly Pen SheetRim2Pen = new Pen(Grad(new Point(0, 0), new Point(1, 1), sheetRim2), 0.9);
+        public static Color GlassShadow = C("#16244A"); public static double GlassShadowOpacity = 0.3;
+
+        static string Pick(string glass, string dark) { return Skin != 1 ? "#00FFFFFF" : Dark ? dark : glass; }
+
+        public static void Use(int skin) { Use(skin, Dark); }
+
+        public static void Use(int skin, bool dark)
         {
-            Skin = skin == 1 ? 1 : 0;
-            for (int i = 0; i < brushes.Count; i++) brushes[i].Color = C(values[i][Skin]);
-            rimTop.Color = Glass ? C(RimTopGlass) : Colors.Transparent; rimEnd.Color = Glass ? C(RimEndGlass) : Colors.Transparent;
+            Skin = skin < 0 || skin >= Names.Length ? 0 : skin; Dark = dark;
+            int col = Skin == 0 ? 0 : Skin == 1 ? (Dark ? 2 : 1) : Skin + 1; // (Glass has two columns)
+            for (int i = 0; i < brushes.Count; i++) brushes[i].Color = C(values[i][col]);
+
+            boxRim[0].Color = C(Pick("#E0FFFFFF", "#80FFFFFF")); boxRim[1].Color = C(Pick("#47FFFFFF", "#1FFFFFFF")); boxRim[2].Color = C(Pick("#94FFFFFF", "#3DFFFFFF"));
+            boxGlow.Color = C(Pick("#1FFFFFFF", "#0FFFFFFF"));
+            gloss[0].Color = C(Pick("#30FFFFFF", "#17FFFFFF")); gloss[1].Color = C("#00FFFFFF");
+            sheetRim[0].Color = C(Pick("#F2FFFFFF", "#A6DCE6FF")); sheetRim[1].Color = C(Pick("#61FFFFFF", "#2BFFFFFF")); sheetRim[2].Color = C(Pick("#C2FFFFFF", "#66DCE6FF"));
+            sheetRim2[0].Color = C(Pick("#A6FFFFFF", "#47FFFFFF")); sheetRim2[1].Color = C(Pick("#38FFFFFF", "#12FFFFFF")); sheetRim2[2].Color = C(Pick("#80FFFFFF", "#2BFFFFFF"));
+            veil.Color = C(Pick("#38FFFFFF", "#14FFFFFF"));
+            glassBase.Color = C(Dark ? "#141A28" : "#DCE6F0");
+            for (int i = 0; i < glow.Length; i++)
+            {
+                double a = Skin != 1 ? 0 : (Dark ? 0.13 : 0.21) * Math.Pow(1 - i / (double)glow.Length, 1.6);
+                glow[i].Color = Color.FromArgb((byte)(a * 255), 255, 255, 255);
+            }
+            GlassShadow = C(Dark ? "#000000" : "#16244A"); GlassShadowOpacity = Dark ? 0.5 : 0.3;
         }
     }
 
@@ -469,7 +505,7 @@ namespace Corner
 
         Data data;
         readonly Stopwatch clock = Stopwatch.StartNew();
-        Grid card; DropShadowEffect shadow;
+        Grid card; Shade shadow; // the panel, and the soft shadow under it (Shade.cs)
         readonly TranslateTransform cardShift = new TranslateTransform();
         readonly ScaleTransform cardScale = new ScaleTransform(1, 1);
         TextBlock dayText, subText, inputHint, inputPreview;
@@ -526,11 +562,13 @@ namespace Corner
             mouseTimer.Tick += (s, e) => MouseTick();
             mouseTimer.Start();
             remindTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
-            remindTimer.Tick += (s, e) => { LogDays(); CheckReminders(); CheckInTick(); }; // LogDays: yesterday into days.csv (Stats.cs)
+            remindTimer.Tick += (s, e) => { LogDays(); CheckReminders(); CheckInTick(); ApplyLogo(false); ApplyFullIcon(); ApplyTrayIcon(); }; // LogDays: yesterday into days.csv (Stats.cs)
             remindTimer.Start();
 
+            InitUpdates(test);
+            After(6000, WarmWarp); // (Launch.cs) // a newer Corner on GitHub: fetched and swapped in by itself (Update.cs)
             if (firstRun && (!test || Environment.GetEnvironmentVariable("CORNER_ONBOARD") == "1")) ShowOnboarding(); // a new install: name, sleep need, routines (Onboard.cs)
-            else if (peek) ShowPanel(6000);
+            else if (peek || !test) { launchZoom = true; ShowPanel(peek ? 6000 : 4500); } // Corner starting: it opens out of its icon, then rests in its corner (Launch.cs)
             CheckReminders();
         }
 
@@ -539,6 +577,8 @@ namespace Corner
             tray = new WF.NotifyIcon { Text = "Corner" };
             try { tray.Icon = System.Drawing.Icon.ExtractAssociatedIcon(System.Reflection.Assembly.GetEntryAssembly().Location); }
             catch { tray.Icon = System.Drawing.SystemIcons.Application; }
+            ApplyLogo(true); // the light or the dark logo, as Windows is in light or dark mode (Logo.cs)
+            ApplyTrayIcon(); // the tray shows the hot-corner picture, as the taskbar does in Full Mode (TrayIcon.cs)
             var menu = new WF.ContextMenuStrip();
             menu.Items.Add("View Full Mode", null, (s, e) => EnterFull());
             menu.Items.Add("Show list", null, (s, e) => Wake());
@@ -710,12 +750,13 @@ namespace Corner
             card.RenderTransform = tg;
             card.LayoutTransform = zoom;
 
-            shadow = new DropShadowEffect { BlurRadius = 34, ShadowDepth = 10, Direction = 270, Color = Color.FromRgb(60, 54, 34), Opacity = 0.3 };
-            panelBg = new Border { CornerRadius = new CornerRadius(18), Background = T.Bg, BorderBrush = T.Edge, BorderThickness = new Thickness(1), Effect = shadow };
+            shadow = new Shade { Radius = 18, Blur = 34, Depth = 10, Tint = Color.FromRgb(60, 54, 34), Strength = 0.3 };
+            card.Children.Add(shadow);
+            panelBg = new Border { CornerRadius = new CornerRadius(18), Background = T.Bg, BorderBrush = T.Edge, BorderThickness = new Thickness(1) };
             card.Children.Add(panelBg);
             // the Glass skin's tint and rim, over the picture of what is behind the panel (Glass.cs)
-            glassSheen = new Border { Height = T.GlassSheenHeight, VerticalAlignment = VerticalAlignment.Top, Background = T.GlassSheen };
-            glassTint = new Border { Background = T.GlassTint, BorderBrush = T.GlassRim, BorderThickness = new Thickness(1), IsHitTestVisible = false, Visibility = Visibility.Collapsed, Child = glassSheen };
+            glassSheet = new GlassSheet();
+            glassTint = new Border { IsHitTestVisible = false, Visibility = Visibility.Collapsed, Child = glassSheet };
             card.Children.Add(glassTint);
 
             var dock = new DockPanel { LastChildFill = true };
@@ -758,7 +799,7 @@ namespace Corner
             BuildEnergyTop(dock); // tabs, energy line, morning check-in (Energy.cs)
 
             // add box
-            var addBox = new PillBorder { Margin = new Thickness(14, 0, 14, 8), Height = 40, Background = T.Field, BorderThickness = new Thickness(1.5), BorderBrush = Brushes.Transparent, Cursor = Cursors.IBeam };
+            var addBox = new PillBorder { Height = 40, Background = T.Field, BorderThickness = new Thickness(1.5), BorderBrush = Brushes.Transparent, Cursor = Cursors.IBeam };
             var ag = new Grid();
             addCol = new ColumnDefinition { Width = new GridLength(36) }; // set with the + in Restyle (Ui.cs)
             ag.ColumnDefinitions.Add(addCol);
@@ -776,8 +817,13 @@ namespace Corner
             inputChip = new PillBorder { Background = T.Soft, Padding = new Thickness(7, 2, 7, 3), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 8, 0), Visibility = Visibility.Collapsed, IsHitTestVisible = false, Child = inputPreview };
             Grid.SetColumn(inputChip, 2); ag.Children.Add(inputChip);
             addBox.Child = ag;
-            DockPanel.SetDock(addBox, Dock.Top); leftDock.Children.Add(addBox);
-            tasksAdd = addBox;
+            // under the box, what you usually do at this time of day, as chips (Work.cs)
+            addPill = addBox;
+            habitRow = new WrapPanel { Margin = new Thickness(2, 6, 0, 0), Visibility = Visibility.Collapsed };
+            var addStack = new StackPanel(); addStack.Children.Add(addBox); addStack.Children.Add(habitRow);
+            var addWrap = new Border { Margin = new Thickness(14, 0, 14, 8), Child = addStack };
+            DockPanel.SetDock(addWrap, Dock.Top); leftDock.Children.Add(addWrap);
+            tasksAdd = addWrap;
 
             input.TextChanged += (s, e) =>
             {
@@ -799,7 +845,10 @@ namespace Corner
             var scroller = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Focusable = false, Content = list };
             // the task list sits in a white card, which scrolls with it
             listCard = new RimBorder { Background = T.Field };
-            scroller.Content = null; listCard.Child = list; scroller.Content = listCard;
+            scroller.Content = null;
+            listHost = new Grid(); listHost.Children.Add(list);
+            BuildPlanStrip(); // "Today's plan", upright beside the planned tasks in Full Mode (FullLayout.cs)
+            listCard.Child = listHost; scroller.Content = listCard;
             leftDock.Children.Add(BuildBody(scroller));
             scroller.SizeChanged += (s, e) => ClipList(); // (Ui.cs)
             dock.Children.Add(BuildMain());
@@ -815,7 +864,7 @@ namespace Corner
                 SetScale(CurrentScale + (e.Delta > 0 ? 0.05 : -0.05), true);
             };
 
-            var root = new Grid();
+            var root = rootGrid = new Grid();
             root.Children.Add(card);
             Content = root;
         }
@@ -840,11 +889,7 @@ namespace Corner
             string count = open > 0 ? open + " open" : data.Tasks.Count > 0 ? "all done" : "";
             subText.Inlines.Clear();
             if (full) subText.Inlines.Add(new Run(DateTime.Now.ToString("MMMM d", inv) + (count.Length > 0 ? "  ·  " + count : "")));
-            else
-            {   // the corner panel: the date stands out, the count sits quietly beside it
-                subText.Inlines.Add(new Run(DateTime.Now.ToString("ddd d MMM", inv)) { Foreground = T.Text, FontWeight = FontWeights.SemiBold });
-                if (count.Length > 0) subText.Inlines.Add(new Run("   " + count) { FontSize = Z(11) });
-            }
+            // (the corner panel shows no date and no count: FocusLayout hides this text there)
 
             DrawFocus(); // the next-task box follows every change (Focus.cs)
             double f = data.Tasks.Count == 0 ? 0 : (double)done / data.Tasks.Count;
@@ -878,12 +923,15 @@ namespace Corner
                     Text = done.Count > 0 ? "All done. Enjoy it." : "Nothing here yet.",
                     FontSize = Z(12.5), Foreground = T.Faint, Margin = new Thickness(RowOver, 6, RowOver, 6)
                 });
-            if (done.Count > 0)
+            if (done.Count > 0 && !FullArranged) // (Full Mode shows them under the routines: FillDone)
             {
                 list.Children.Add(DoneHeader(done.Count));
                 if (data.DoneOpen) foreach (var t in done) list.Children.Add(MakeRow(t).Wrap);
             }
             flashId = null;
+            DrawHabits(); // "Usually this morning: …" under the add box (Work.cs)
+            PlacePlanStrip();
+            FillDone();
             UpdateHeader();
         }
 
@@ -907,7 +955,7 @@ namespace Corner
                 clear.MouseLeftButtonDown += (s, e) => { e.Handled = true; data.Tasks.RemoveAll(t => t.Done); Save(); Rebuild(); };
                 g.Children.Add(clear);
             }
-            var bar = new Border { CornerRadius = new CornerRadius(Sp(12, 10)), Background = T.Soft, Padding = new Thickness(RowOver + 2, 0, RowOver + 2, 0), Margin = new Thickness(0, Sp(6, 4), 0, 0), Child = g, Cursor = Cursors.Hand };
+            var bar = new RimBorder { CornerRadius = new CornerRadius(Sp(12, 10)), Background = T.Soft, Padding = new Thickness(RowOver + 2, 0, RowOver + 2, 0), Margin = new Thickness(0, Sp(6, 4), 0, 0), Child = g, Cursor = Cursors.Hand };
             bar.MouseLeftButtonDown += (s, e) => { e.Handled = true; data.DoneOpen = !data.DoneOpen; Save(); Rebuild(); };
             return bar;
         }
@@ -942,8 +990,10 @@ namespace Corner
             var ringHot = new Ellipse { Width = 18, Height = 18, Fill = T.Soft, Stroke = T.Text, StrokeThickness = 1.5, Opacity = 0, IsHitTestVisible = false }; // under the mouse the circle fills pale lime
             var fillScale = new ScaleTransform(t.Done ? 1 : 0, t.Done ? 1 : 0);
             var fill = new Ellipse { Width = 18, Height = 18, Fill = t.Done ? (Brush)T.Ctl : T.Accent, RenderTransformOrigin = new Point(0.5, 0.5), RenderTransform = fillScale, IsHitTestVisible = false };
-            var tick = Glyph("M5,9.4 L7.9,12.2 L13.2,6.2", t.Done ? (Brush)T.Text : T.OnAccent, 1.8, 18, 18);
-            tick.Opacity = t.Done ? 1 : 0;
+            bool worked = WorkedOn(t); // being worked on: the circle carries a tick, so the one control says "completed" (Work.cs)
+            var tick = Glyph("M5,9.4 L7.9,12.2 L13.2,6.2", t.Done || worked ? (Brush)T.Text : T.OnAccent, 1.8, 18, 18);
+            tick.Opacity = t.Done || worked ? 1 : 0;
+            if (worked) box.ToolTip = "Completed";
             mark.Children.Add(new Ellipse { Width = 18, Height = 18, Stroke = t.Done ? (Brush)T.Ctl : T.Text, StrokeThickness = 1.5, IsHitTestVisible = false });
             mark.Children.Add(ringHot); mark.Children.Add(fill); mark.Children.Add(tick);
             box.Children.Add(mark);
@@ -973,10 +1023,12 @@ namespace Corner
                 var chip = new StackPanel { Orientation = Orientation.Horizontal, Height = rowH, VerticalAlignment = VerticalAlignment.Top, Background = Brushes.Transparent, Cursor = Cursors.Hand };
                 if (t.Routine != null) chip.Children.Add(RoutineMark());
                 etag = EnergyTag(t); chip.Children.Add(etag); // deep / light / unset, one click cycles
-                var due = t.DueAt;
+                // by priority (Work.cs) nothing is "overdue", and a time an old schedule gave a task is not shown
+                bool prioRow = PriorityMode, overdue = t.Overdue && !prioRow;
+                var due = prioRow && t.Planned ? null : t.DueAt;
                 if (due != null)
                 {
-                    Brush b = t.Overdue ? T.Danger : due.Value.Date == DateTime.Today ? (Brush)T.Text : T.Muted;
+                    Brush b = overdue ? T.Danger : due.Value.Date <= DateTime.Today ? (Brush)T.Text : T.Muted;
                     if (t.HasTime)
                     {
                         var bell = Glyph("M5,1.2 C3.3,1.2 2.3,2.6 2.3,4.3 V6.2 L1.3,7.8 H8.7 L7.7,6.2 V4.3 C7.7,2.6 6.7,1.2 5,1.2 Z M4.2,9.3 H5.8", b, 1, 10, 10.5);
@@ -985,12 +1037,12 @@ namespace Corner
                     }
                     // overdue says so in words, not only in red
                     string when = When.Label(due.Value, t.HasTime);
-                    if (t.Overdue) when = "Overdue · " + (due.Value.Date == DateTime.Today ? due.Value.ToString("t", CultureInfo.CurrentCulture) : when.StartsWith("Yesterday") ? "y" + when.Substring(1) : when);
-                    var whenText = new TextBlock { Text = when, FontSize = Z(11.5), Foreground = b, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 2, 1) }; if (t.Overdue) Lean(whenText);
-                    if (t.Overdue || due.Value.Date == DateTime.Today)
+                    if (overdue) when = "Overdue · " + (due.Value.Date == DateTime.Today ? due.Value.ToString("t", CultureInfo.CurrentCulture) : when.StartsWith("Yesterday") ? "y" + when.Substring(1) : when);
+                    var whenText = new TextBlock { Text = when, FontSize = Z(11.5), Foreground = b, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 2, 1) }; if (overdue) Lean(whenText);
+                    if (overdue || due.Value.Date <= DateTime.Today)
                     {   // today and overdue are tags: pale lime, and a pale red
                         whenText.Margin = new Thickness(0, 0, 0, 1);
-                        chip.Children.Add(new PillBorder { Background = t.Overdue ? T.DangerSoft : T.Soft, Padding = new Thickness(8, 2, 8, 3), VerticalAlignment = VerticalAlignment.Center, Child = whenText });
+                        chip.Children.Add(new PillBorder { Background = overdue ? T.DangerSoft : T.Soft, Padding = new Thickness(8, 2, 8, 3), VerticalAlignment = VerticalAlignment.Center, Child = whenText });
                     }
                     else chip.Children.Add(whenText);
                 }
@@ -1031,6 +1083,7 @@ namespace Corner
             box.MouseLeftButtonDown += (s, e) =>
             {
                 e.Handled = true;
+                Click.Play(); // (Sound.cs)
                 if (t.Done)
                 {
                     t.Done = false; t.DoneAt = null;
@@ -1048,6 +1101,7 @@ namespace Corner
                 main.IsHitTestVisible = false;
                 Anim(fillScale, ScaleTransform.ScaleXProperty, 1, 260, ease: Pop);
                 Anim(fillScale, ScaleTransform.ScaleYProperty, 1, 260, ease: Pop);
+                tick.Stroke = T.OnAccent;
                 tick.StrokeDashArray = new DoubleCollection(new double[] { 9, 9 });
                 tick.StrokeDashOffset = 9; tick.Opacity = 1;
                 Anim(tick, Shape.StrokeDashOffsetProperty, 0, 240, delay: 90);
@@ -1060,6 +1114,7 @@ namespace Corner
             del.MouseLeftButtonDown += (s, e) =>
             {
                 e.Handled = true;
+                if (timerId == t.Id) StopTimer(); // (its stretch of work is logged first: Work.cs)
                 data.Tasks.Remove(t);
                 if (whenOpenId == t.Id) whenOpenId = null;
                 Save(); UpdateHeader();
@@ -1181,8 +1236,9 @@ namespace Corner
             var strip = new WrapPanel { Margin = new Thickness(RowOver + Sp(18, 15) + Sp(10, 8), 0, RowOver, Sp(8, 4)) }; // under the title
             Action<DateTime> setDate = d =>
             {
-                var old = t.DueAt;
+                var old = t.DueAt; bool planned = t.Planned && t.HasTime && old != null && old.Value.Date == d.Date;
                 t.SetDue(t.HasTime && old != null ? d + old.Value.TimeOfDay : d, t.HasTime);
+                t.Planned = planned; // picking the same day again keeps a planned time movable by Plan
                 whenOpenId = null; Save(); Rebuild();
             };
             var today = DateTime.Today;
@@ -1339,15 +1395,19 @@ namespace Corner
             ApplyPromptOnly(); // a check-in that popped up by itself shows alone (Checks.cs)
             Rebuild();
             Show();
-            Anim(card, OpacityProperty, 1, 160);
+            AdaptGlassPanel(); // the Glass skin: light or dark glass, by what is behind the panel (Glass.cs)
+            if (switchWarp) { card.BeginAnimation(OpacityProperty, null); card.Opacity = 0; } // the warp brings it in (Launch.cs)
+            else Anim(card, OpacityProperty, 1, 160);
             Anim(cardShift, TranslateTransform.XProperty, 0, 320, from: OnRight ? 18 : -18, ease: Out);
             Anim(cardShift, TranslateTransform.YProperty, 0, 320, from: OnTop ? -12 : 12, ease: Out);
             Anim(cardScale, ScaleTransform.ScaleXProperty, 1, 320, from: 0.955, ease: Out);
             Anim(cardScale, ScaleTransform.ScaleYProperty, 1, 320, from: 0.955, ease: Out);
+            bool launching = launchZoom, genieOpen = launching || (!full && !switchWarp && (!demoRun || demoGenie));
+            if (genieOpen) LaunchZoom(launching); // out of its corner with the Genie; out of the app icon when Corner starts (Launch.cs)
             int i = 0;
             foreach (UIElement el in list.Children)
             {
-                if (i >= 14) break;
+                if (i >= 14 || genieOpen || switchWarp) break; // (the launch draws the panel as one picture; nothing moves inside it)
                 el.Opacity = 0;
                 Anim(el, OpacityProperty, 1, 240, delay: 50 + i * 24);
                 i++;
@@ -1361,6 +1421,7 @@ namespace Corner
             shown = false; int g = ++gen;
             if (commitEdit != null) commitEdit();
             whenOpenId = null; peekUntil = 0;
+            if (genieBack && GenieHide(() => { if (gen == g) { Hide(); card.Opacity = 0; } })) return; // back into its corner with the Genie (Launch.cs)
             Anim(cardShift, TranslateTransform.XProperty, OnRight ? 10 : -10, 140);
             Anim(cardShift, TranslateTransform.YProperty, OnTop ? -6 : 6, 140);
             Anim(card, OpacityProperty, 0, 140, done: () => { if (gen == g) Hide(); });
@@ -1372,18 +1433,28 @@ namespace Corner
             if (mode.StartsWith("onboard")) { DemoOnboard(path, mode.Length > 7 ? mode[7] - '0' : 0); return; } // the welcome window (Onboard.cs)
             if (mode == "rise" || mode == "dip") { DemoToast(path, mode == "dip"); return; } // the energy notice where it would show (Toast.cs)
             if (mode == "riselive" || mode == "diplive") { ShowNudge(mode == "diplive" ? DipLine() : RiseLine()); After(ToastMs + 1500, () => { tray.Visible = false; Application.Current.Shutdown(); }); return; } // the same, on the real screen
-            foreach (var s in new[] { "Book flights", "Finish the quarterly report and send it to the whole team friday", "Buy milk", "Call Sam tomorrow 9am", "Water the plants today", "Stretch in 0 min" }) { input.Text = s; AddTask(); }
-            data.Tasks[5].Done = true; data.Tasks[5].DoneAt = "x"; data.DoneOpen = true; whenOpenId = data.Tasks[2].Id;
-            data.Tasks[3].SetDue(DateTime.Today.AddDays(-1), false);
-            input.Text = "Dentist nov 30 at 2pm";
+            if (!mode.StartsWith("real") || mode == "real")
+            {   // "realplan" / "realsplit": the test folder's own tasks, untouched
+                foreach (var s in new[] { "Book flights", "Finish the quarterly report and send it to the whole team friday", "Buy milk", "Call Sam tomorrow 9am", "Water the plants today", "Stretch in 0 min" }) { input.Text = s; AddTask(); }
+                data.Tasks[5].Done = true; data.Tasks[5].DoneAt = "x"; data.DoneOpen = true; whenOpenId = data.Tasks[2].Id;
+                data.Tasks[3].SetDue(DateTime.Today.AddDays(-1), false);
+                input.Text = "Dentist nov 30 at 2pm";
+            }
             // "rest…" modes keep the corner panel as it opens (the next task alone); "resthover" then brings the rest in, as the pointer would
             bool rest = mode.StartsWith("rest"); if (rest && mode.Length > 4) mode = mode.Substring(4);
             demoRun = true;
+            if (mode == "launch" || mode == "launchclose") launchZoom = true;
+            if (mode == "hoveropen" || mode == "hoverclose") demoGenie = true;
             DemoSeed(mode);
             ShowPanel(600000);
             if (!rest) Reveal(); else if (mode == "hover") After(500, Reveal);
             DemoAfterShow(mode);
-            After(mode == "drag" ? 8000 : 1500, () =>
+            if (mode == "feelafter" && energy != null) { SetTab(1); var ft = data.Tasks.FirstOrDefault(x => !x.Done); feelAfter = new FeelAfter { Replan = true, HighId = ft != null ? ft.Id : null, Felt = 63 }; DrawEnergy(); }
+            if (mode == "feel" && energy != null) { SetTab(1); var fn = Now(); feelAsk = new FeelAsk { Felt = 0.63, Model = energy.AllAt(fn), Shown = 30, At = fn }; DrawEnergy(); } // the counter corrected (EnergyFeel.cs)
+            if (mode == "launch" || mode == "launchclose" || mode == "hoveropen" || mode == "hoverclose") { DemoLaunch(path, mode.EndsWith("close")); return; } // frames of the Genie effect (Launch.cs)
+            if (mode == "cycleopen" || mode == "cycleclose") { DemoCycle(path, mode == "cycleclose"); return; } // the cycle out of its button
+            if (mode == "fullswitch" || mode == "fullexit") { DemoSwitch(path, mode == "fullexit"); return; } // and of the switch to Full Mode and back
+            After(mode == "drag" || mode == "drawtime" ? 8000 : Environment.GetEnvironmentVariable("CORNER_FULL") == "1" ? 3200 : 1500, () => // (Full Mode needs longer to open)
             {
                 var root = (Grid)Content;
                 root.Background = new SolidColorBrush(Color.FromRgb(185, 177, 151)); // a sand backdrop for the test renders
@@ -1443,6 +1514,12 @@ namespace Corner
             // a test run is one instance per data folder, so renders never wait on (or get blocked by) another test copy
             mutex = new System.Threading.Mutex(true, "Corner.Todo.SingleInstance" + (test ? ".Test." + Store.Dir.ToLowerInvariant().GetHashCode().ToString("x") : ""), out created);
             if (!created) return;
+            // Corner draws itself without the graphics card. Asked to use it, WPF sets up a 3D device, and on a laptop
+            // whose graphics share the main memory (Intel Iris Xe here) that alone took about 300 MB, for as long as
+            // Corner ran, whatever was on the screen: an empty window cost the same. A panel this small is drawn as
+            // smoothly without it (the shadow and the Glass picture were changed to make that so: Shade.cs, Glass.cs).
+            // "Gpu": 1 in settings.json brings the graphics card back.
+            if (Settings.Get("Gpu", 0) < 0.5) RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly;
             var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
             app.DispatcherUnhandledException += (s, e) => { Store.Log(e.Exception); e.Handled = true; };
             var shell = new Shell();

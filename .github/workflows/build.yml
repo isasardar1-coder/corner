@@ -1,7 +1,7 @@
 name: Build
 
-# Builds and checks all three versions on every push. Pushing a tag like v1.0.0 also publishes a release
-# with the three downloads attached.
+# Builds and checks both versions on every push. Pushing a tag like v1.1.0 also publishes a release
+# with the two downloads attached and RELEASE_NOTES.md as its text.
 on:
   push:
     branches: [main]
@@ -20,7 +20,9 @@ jobs:
         run: bash run-checks.sh
       - name: Build Corner.app
         working-directory: swift
-        run: bash package.sh
+        run: |
+          case "$GITHUB_REF_NAME" in v[0-9]*) export CORNER_VERSION="${GITHUB_REF_NAME#v}";; esac
+          bash package.sh
       - uses: actions/upload-artifact@v4
         with:
           name: Corner-Mac-Swift
@@ -30,55 +32,6 @@ jobs:
         with:
           name: Swift-demo-renders
           path: swift/out/demo-*.png
-
-  avalonia:
-    name: Mac (Avalonia)
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0.x'
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Checks
-        working-directory: mac-avalonia
-        run: bash run-tests.sh
-      - name: Publish and package
-        working-directory: mac-avalonia
-        run: |
-          pip install pillow
-          for r in osx-arm64 osx-x64; do
-            dotnet publish Corner.Mac/Corner.Mac.csproj -c Release -r $r --self-contained true -o out/publish-$r
-          done
-          python tools/package.py
-      - name: Starts on a Mac
-        working-directory: mac-avalonia
-        run: |
-          rm -rf /tmp/av && mkdir /tmp/av && cd /tmp/av && unzip -q $GITHUB_WORKSPACE/mac-avalonia/out/Corner-Mac-AppleSilicon.zip
-          export CORNER_DATA=/tmp/av-data && mkdir -p $CORNER_DATA
-          mkdir -p $GITHUB_WORKSPACE/mac-avalonia/out/demo
-          for mode in tasks energy settings onboard all; do
-            png=$GITHUB_WORKSPACE/mac-avalonia/out/demo/avalonia-$mode.png
-            ./Corner.app/Contents/MacOS/Corner --demo $png $mode & pid=$!
-            for i in $(seq 1 60); do kill -0 $pid 2>/dev/null || break; sleep 1; done
-            kill $pid 2>/dev/null || true
-            ls -la $png
-          done
-          cat $CORNER_DATA/error.log 2>/dev/null || true
-          for f in $GITHUB_WORKSPACE/mac-avalonia/out/demo/*.png; do [ -s "$f" ] || { echo "empty render: $f"; exit 1; }; done
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Corner-Mac-Avalonia
-          path: |
-            mac-avalonia/out/Corner-Mac-AppleSilicon.zip
-            mac-avalonia/out/Corner-Mac-Intel.zip
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: Avalonia-demo-renders
-          path: mac-avalonia/out/demo
 
   windows:
     name: Windows
@@ -107,18 +60,19 @@ jobs:
   release:
     name: Release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [swift, avalonia, windows]
+    needs: [swift, windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: dl
+          pattern: Corner-*
           merge-multiple: true
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dl/*.zip --repo "$GITHUB_REPOSITORY" --title "Corner $GITHUB_REF_NAME" \
-            --notes "Downloads: Corner-Windows.zip (Windows 10/11), Corner-Mac-Swift.zip (Mac, native, recommended), Corner-Mac-AppleSilicon.zip / Corner-Mac-Intel.zip (Mac, Avalonia). See the README for how to open them the first time."
+          gh release create "$GITHUB_REF_NAME" dl/*.zip --repo "$GITHUB_REPOSITORY" --title "Corner $GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md

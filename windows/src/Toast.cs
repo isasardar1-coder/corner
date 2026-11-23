@@ -27,19 +27,17 @@ namespace Corner
             if (T.Glass && !IsVisible) GrabBackdrop(); // a fresh picture of what is behind (Glass.cs)
 
             double z = scale, w = CardW;
-            var bg = new Border { CornerRadius = new CornerRadius(18), Background = T.Bg, BorderBrush = T.Edge, BorderThickness = new Thickness(1),
-                Effect = new DropShadowEffect { BlurRadius = 30, ShadowDepth = 8, Direction = 270, Color = T.Glass ? T.GlassShadow : Color.FromRgb(60, 54, 34), Opacity = T.Glass ? T.GlassShadowOpacity : 0.3 } };
+            var bg = new Border { CornerRadius = new CornerRadius(18), Background = T.Bg, BorderBrush = T.Edge, BorderThickness = new Thickness(1) };
             var cardGrid = new Grid { Width = w, Margin = new Thickness(ToastM), LayoutTransform = new ScaleTransform(z, z), Cursor = System.Windows.Input.Cursors.Hand };
+            cardGrid.Children.Add(new Shade { Radius = 18, Blur = 30, Depth = 8, Tint = T.Glass ? T.GlassShadow : Color.FromRgb(60, 54, 34), Strength = T.Glass ? T.GlassShadowOpacity : 0.3 }); // the shadow under the box (Shade.cs)
             cardGrid.Children.Add(bg);
-            ImageBrush back = null;
+            bool adapt = T.Glass && !IsVisible; // on its own on the screen: light or dark glass by what is behind it
             if (T.Glass)
-            {
-                if (Backdrop.Image != null) { back = new ImageBrush(Backdrop.Image) { Stretch = Stretch.Fill, ViewboxUnits = BrushMappingMode.Absolute }; bg.Background = back; }
-                else bg.Background = T.GlassBase;
-                bg.BorderThickness = new Thickness(0);
-                cardGrid.Children.Add(new Border { CornerRadius = new CornerRadius(18), Background = T.GlassTint, BorderBrush = T.GlassRim, BorderThickness = new Thickness(1), IsHitTestVisible = false,
-                    Child = new Border { Height = T.GlassSheenHeight, VerticalAlignment = VerticalAlignment.Top, Background = T.GlassSheen, CornerRadius = new CornerRadius(17, 17, 0, 0) } });
+            {   // the box casts the shadow; the sheet of glass lies over it (Glass.cs)
+                bg.Background = T.GlassBase; bg.BorderThickness = new Thickness(0);
+                cardGrid.Children.Add(new GlassSheet { Radius = 18 });
             }
+            else if (Mat.On) { bg.BorderThickness = new Thickness(0); cardGrid.Children.Add(new GlassSheet { Radius = 18 }); } // Metal, Ceramic, Paper: the sheet's grain and edge (Material.cs)
 
             var stack = new Grid { Margin = new Thickness(18, 16, 14, 17) };
             stack.ColumnDefinitions.Add(new ColumnDefinition()); stack.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -93,12 +91,7 @@ namespace Corner
             };
             win.ContentRendered += (s, e) =>
             {
-                if (back != null) try
-                {   // the part of the picture that is behind the card
-                    var a = cardGrid.PointToScreen(new Point(0, 0)); var b = cardGrid.PointToScreen(new Point(cardGrid.ActualWidth, cardGrid.ActualHeight));
-                    back.Viewbox = new Rect((a.X - Backdrop.Left) / Backdrop.K, (a.Y - Backdrop.Top) / Backdrop.K, Math.Max(0.5, (b.X - a.X) / Backdrop.K), Math.Max(0.5, (b.Y - a.Y) / Backdrop.K));
-                }
-                catch { }
+                if (adapt) try { AdaptGlass(new Rect(cardGrid.PointToScreen(new Point(0, 0)), cardGrid.PointToScreen(new Point(cardGrid.ActualWidth, cardGrid.ActualHeight)))); } catch { }
                 root.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(260)) { EasingFunction = Out });
                 shift.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(0, TimeSpan.FromMilliseconds(320)) { EasingFunction = Out });
             };

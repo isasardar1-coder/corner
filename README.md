@@ -10,8 +10,18 @@ Get the latest version from the **[Releases](../../releases/latest)** page:
 | File | For |
 |---|---|
 | `Corner-Windows.zip` | Windows 10 and 11 |
-| `Corner-Mac-Swift.zip` | Mac (native app, small download). Works on Apple Silicon and Intel. |
-| `Corner-Mac-AppleSilicon.zip` / `Corner-Mac-Intel.zip` | Mac, the Avalonia version (same look as the Windows app, bigger download) |
+| `Corner-Mac-Swift.zip` | Mac (native app). Works on Apple Silicon and Intel, macOS 12 or newer. |
+
+What changed in each version is on the [Releases](../../releases) page and in [RELEASE_NOTES.md](RELEASE_NOTES.md).
+
+### Updating
+
+- **Windows, version 1.1.0 or newer:** Corner updates itself. It looks for a new release a minute after it starts and
+  every 6 hours, and swaps itself once you are not using it. Settings > Updates turns this off.
+- **Windows, version 1.0.0:** download `Corner-Windows.zip` once more and put the new `Corner.exe` in place of the old
+  one (keep your other files). From then on it updates itself.
+- **Mac:** download `Corner-Mac-Swift.zip` again and replace Corner.app in Applications. Your tasks are kept; they
+  live in `~/Library/Application Support/Corner`.
 
 ### Windows
 
@@ -32,16 +42,19 @@ protected your PC, click **More info**, then **Run anyway**. Your tasks are save
 Your tasks are saved in `~/Library/Application Support/Corner`. The files are the same as on Windows, so you can
 copy them between a PC and a Mac.
 
-## The three versions
+## The two versions
 
 | Folder | What | Built with |
 |---|---|---|
 | [`windows`](windows) | The original app | C# and WPF, compiled by the C# compiler that ships with Windows (`build.ps1`) |
 | [`swift`](swift) | Native Mac app | Swift, AppKit and SwiftUI (Swift Package Manager) |
-| [`mac-avalonia`](mac-avalonia) | Mac port of the Windows app | C#, .NET 8 and Avalonia, sharing the Windows model code |
+
+The Mac app follows the Windows app. It has the same tasks, energy curve, planning (by schedule or by priority),
+stopwatch, work log and habits, and reads the same data files. It does not have the Windows app's opening animations
+or its Metal, Ceramic and Paper skins.
 
 Every push is built and checked on GitHub's Windows and Mac machines (see the Actions tab). Pushing a tag such as
-`v1.0.1` publishes a new release with all the downloads.
+`v1.1.0` publishes a new release with both downloads.
 
 The apps are not signed with an Apple or Microsoft developer certificate, which is why the first open needs the
 steps above.

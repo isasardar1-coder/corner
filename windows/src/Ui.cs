@@ -1,4 +1,4 @@
-// Corner - the grid both modes are drawn on, the shared controls (buttons, switches, chips, energy bars),
+﻿// Corner - the grid both modes are drawn on, the shared controls (buttons, switches, chips, energy bars),
 // and the two pages built only from them: the 1-10 freshness prompt and Settings. The colours are T, in Corner.cs.
 using System;
 using System.Collections.Generic;
@@ -18,6 +18,7 @@ namespace Corner
     class PillBorder : RimBorder
     {
         public PillBorder() { CornerRadius = new CornerRadius(12); } // until it has a size
+        protected override bool Glossy { get { return true; } }      // the Glass skin: light across its upper half (Glass.cs)
         protected override void OnRenderSizeChanged(SizeChangedInfo info)
         {
             base.OnRenderSizeChanged(info);
@@ -95,6 +96,10 @@ namespace Corner
         static double GapY { get { return Slim ? 8 : 10; } }
         static double Radius { get { return Slim ? 20 : 22; } }
         static double SideMid { get { return Slim ? Side : 8; } }
+        // the tasks column's outer and inner sides; Full Mode with "energy on the left" mirrors them
+        static bool Swapped;
+        static double TaskL { get { return Swapped && !Slim ? SideMid : Side; } }
+        static double TaskR { get { return Swapped && !Slim ? Side : SideMid; } }
         const double RowOver = 6; // how far a task row's hover highlight reaches past its content, on both sides
 
         Border listCard, panelBg;   // the task list's white card; the panel itself
@@ -104,9 +109,9 @@ namespace Corner
         /// Spacing and text sizes of the parts that are built once, for the mode being shown. Called from Place.
         void Restyle()
         {
-            Slim = !full;
+            Slim = !full; Swapped = Settings.Get("SwapSides", 0) > 0.5;
             panelBg.CornerRadius = new CornerRadius(Sp(32, T.Glass ? 28 : 26));
-            shadow.BlurRadius = Sp(42, 32); shadow.ShadowDepth = Sp(16, 12);
+            shadow.Radius = panelBg.CornerRadius.TopLeft; shadow.Blur = Sp(42, 32); shadow.Depth = Sp(16, 12);
             SkinPanel(); // the panel's ground, tint and rim for the skin in use (Glass.cs)
 
             headerRow.Margin = new Thickness(Side, Sp(16, 11), Side, Sp(12, 9));
@@ -118,7 +123,7 @@ namespace Corner
             double rk = Sp(0.75, 0.58); ringBox.LayoutTransform = new ScaleTransform(rk, rk);
 
             inputHint.FontSize = Z(13); input.FontSize = Z(13.5); inputPreview.FontSize = Z(11);
-            tasksAdd.Height = Sp(40, 32); tasksAdd.Margin = new Thickness(Side, 0, SideMid, GapY);
+            addPill.Height = Sp(40, 32); tasksAdd.Margin = FullArranged ? new Thickness(TaskL, GapY, TaskR, 0) : new Thickness(TaskL, 0, TaskR, GapY); // Full Mode: under the list (FullLayout.cs)
             addPlus.Margin = new Thickness(PadX - 2, 0, 0, 0); addCol.Width = new GridLength(PadX - 2 + 14 + Sp(9, 7));
             inputChip.Margin = new Thickness(8, 0, Sp(7, 5), 0);
             actionRow.Height = 30;
@@ -135,7 +140,7 @@ namespace Corner
             alertBox.Background = T.Strong; alertBox.BorderThickness = new Thickness(0); alertBox.CornerRadius = new CornerRadius(Radius);
             alertBox.Padding = new Thickness(PadX + 2, PadY + 2, PadX, PadY + 2 - Sp(6, 5));
             // the white card of the task list
-            listCard.CornerRadius = new CornerRadius(Radius); listCard.Margin = new Thickness(Side, 0, SideMid, 0);
+            listCard.CornerRadius = new CornerRadius(Radius); listCard.Margin = new Thickness(TaskL, 0, TaskR, 0);
             listCard.Padding = new Thickness(PadX - RowOver, Sp(8, 6), PadX - RowOver, Sp(8, 6));
             list.Margin = new Thickness(0);
             // whatever scrolls stops Side above the panel's bottom edge, inside its round corners
@@ -148,7 +153,7 @@ namespace Corner
         void ClipList()
         {
             double w = tasksScroll.ActualWidth, h = tasksScroll.ActualHeight;
-            tasksScroll.Clip = w > 0 && h > 0 ? new RectangleGeometry(new Rect(Side, 0, Math.Max(0, w - Side - SideMid), h), Radius, Radius) : null;
+            tasksScroll.Clip = w > 0 && h > 0 ? new RectangleGeometry(new Rect(TaskL, 0, Math.Max(0, w - TaskL - TaskR), h), Radius, Radius) : null;
         }
 
         // ------------------------------------------------------------ controls
@@ -157,8 +162,8 @@ namespace Corner
         /// on: what it sits on, which decides the plain pill's colour: 0 = the panel or a tray, 1 = white, 2 = the dark prompt.
         static FrameworkElement Btn(string text, int kind, Action click, int on = 0)
         {
-            Brush ink = kind == 0 ? T.OnAccent : on == 2 ? (kind == 1 ? T.OnStrong : T.OnStrongSoft) : kind == 1 ? T.Text : T.Muted;
-            Brush rest = kind == 0 ? T.Accent : kind == 2 || on == 2 ? (Brush)Brushes.Transparent : on == 1 ? T.Raised : T.Field;
+            Brush ink = kind == 0 ? T.OnMain : on == 2 ? (kind == 1 ? T.OnStrong : T.OnStrongSoft) : kind == 1 ? T.Text : T.Muted;
+            Brush rest = kind == 0 ? T.Main : kind == 2 || on == 2 ? (Brush)Brushes.Transparent : on == 1 ? T.Raised : T.Field;
             Brush hot = on == 2 ? T.StrongLift : on == 1 ? T.Ctl : T.Lift;
             var label = new TextBlock
             {
@@ -186,17 +191,37 @@ namespace Corner
             return b;
         }
 
-        /// An on/off switch: a forest track with a lime knob when on.
+        /// An on/off switch. On, its track is the colour of the main button and chosen tabs, with the knob in that colour's text colour.
         static FrameworkElement Switch(bool on, Action click)
         {
             var knob = new Ellipse
             {
-                Width = 14, Height = 14, Fill = on ? (Brush)T.Accent : T.Field, Margin = new Thickness(3, 0, 3, 0),
+                Width = 14, Height = 14, Fill = on ? (Brush)T.OnMain : T.Knob, Margin = new Thickness(3, 0, 3, 0),
                 HorizontalAlignment = on ? HorizontalAlignment.Right : HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center
             };
-            var b = new Border { Width = 36, Height = 20, CornerRadius = new CornerRadius(10), Background = on ? (Brush)T.Strong : T.Ctl, Child = knob, Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center };
-            b.MouseLeftButtonDown += (s, e) => { e.Handled = true; click(); };
+            var b = new Border { Width = 36, Height = 20, CornerRadius = new CornerRadius(10), Background = on ? (Brush)T.Main : T.Ctl, Child = knob, Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center };
+            b.MouseLeftButtonDown += (s, e) => { e.Handled = true; Click.Play(); click(); }; // (Sound.cs)
             return b;
+        }
+
+        /// The five skins, as a row of pills that wraps: too many for joined segments in the corner panel.
+        FrameworkElement SkinPicker()
+        {
+            string[] says = { "Sage, forest and lime", "Clear glass; dark over dark things", "Brushed silver, white enamel and steel", "Sage stoneware and glazed porcelain", "Blue card and white paper" };
+            var sp = new StackPanel { Margin = new Thickness(0, Sp(10, 9), 0, Sp(6, 5)) };
+            sp.Children.Add(new TextBlock { Text = "Look", FontSize = Z(12.5), Foreground = T.Text });
+            sp.Children.Add(new TextBlock { Text = says[T.Skin], FontSize = Z(10.5), Foreground = T.Muted, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 1, 0, Sp(8, 7)) });
+            var row = new WrapPanel();
+            foreach (int i in new[] { 1, 2, 3, 4, 0 }) // Glass first (the default), then Metal, Ceramic, Paper, Sage; the numbers stay as saved
+            {
+                int v = i; bool on = i == T.Skin;
+                var pill = new PillBorder { Padding = new Thickness(12, 4, 12, 5), Margin = new Thickness(0, 0, 5, 5), Background = on ? (Brush)T.Main : T.Raised, Cursor = Cursors.Hand,
+                    Child = new TextBlock { Text = T.Names[i], FontSize = Z(11), Foreground = on ? (Brush)T.OnMain : T.Text } };
+                pill.MouseLeftButtonDown += (s, e) => { e.Handled = true; if (!on) SetSkin(v); };
+                row.Children.Add(pill);
+            }
+            sp.Children.Add(row);
+            return sp;
         }
 
         /// One choice out of a few, shown as joined segments; the chosen one is forest green. Drawn for a white surface.
@@ -206,8 +231,8 @@ namespace Corner
             for (int i = 0; i < names.Length; i++)
             {
                 int v = i; bool on = i == chosen;
-                var label = new TextBlock { Text = names[i], FontSize = Z(11), Foreground = on ? (Brush)T.OnStrong : T.Muted };
-                var seg = new PillBorder { Padding = new Thickness(11, 3, 11, 4), Background = on ? (Brush)T.Strong : Brushes.Transparent, Child = label, Cursor = Cursors.Hand };
+                var label = new TextBlock { Text = names[i], FontSize = Z(11), Foreground = on ? (Brush)T.OnMain : T.Muted };
+                var seg = new PillBorder { Padding = new Thickness(11, 3, 11, 4), Background = on ? (Brush)T.Main : Brushes.Transparent, Child = label, Cursor = Cursors.Hand };
                 seg.MouseLeftButtonDown += (s, e) => { e.Handled = true; if (!on) pick(v); };
                 sp.Children.Add(seg);
             }
@@ -255,7 +280,9 @@ namespace Corner
         /// A small round-ended button, for the - and + steppers. Drawn for a white surface.
         static FrameworkElement Step(string sign, Action click)
         {
-            var label = new TextBlock { Text = sign, FontSize = Z(12), Foreground = T.Text, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, -2, 0, 0) };
+            // the sign is drawn, not typed: a typed "+" and "–" sit at different heights and off the middle
+            var label = Glyph(sign == "+" ? "M5,1.5 V8.5 M1.5,5 H8.5" : "M1.5,5 H8.5", T.Text, 1.4, 10, 10);
+            label.HorizontalAlignment = HorizontalAlignment.Center; label.VerticalAlignment = VerticalAlignment.Center;
             var b = new PillBorder { Width = 26, Height = 20, Background = T.Raised, Child = label, Cursor = Cursors.Hand };
             b.MouseEnter += (s, e) => b.Background = T.Ctl;
             b.MouseLeave += (s, e) => b.Background = T.Raised;
@@ -316,7 +343,7 @@ namespace Corner
             {
                 string a = i.ToString();
                 var label = new TextBlock { Text = a, FontSize = Z(11.5), Foreground = T.Text, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-                var cell = new Border { Height = Sp(34, 28), CornerRadius = new CornerRadius(Sp(11, 9)), Margin = new Thickness(1.5, 0, 1.5, 0), Background = T.Lift, Child = label, Cursor = Cursors.Hand };
+                var cell = new RimBorder { Height = Sp(34, 28), CornerRadius = new CornerRadius(Sp(11, 9)), Margin = new Thickness(1.5, 0, 1.5, 0), Background = T.Lift, Child = label, Cursor = Cursors.Hand };
                 cell.MouseEnter += (s, e) => { cell.Background = T.Accent; label.FontWeight = SemiSmall; };
                 cell.MouseLeave += (s, e) => { cell.Background = T.Lift; label.FontWeight = FontWeights.Normal; };
                 cell.MouseLeftButtonDown += (s, e) => { e.Handled = true; answer(a); };
@@ -351,7 +378,7 @@ namespace Corner
                 int v = i; bool on = corner == v, right = v == 0 || v == 2, top = v < 2;
                 var dot = new Border
                 {
-                    Width = on ? 10 : 6, Height = on ? 10 : 6, CornerRadius = new CornerRadius(on ? 3 : 2), Background = on ? (Brush)T.Strong : T.Ctl, Margin = new Thickness(on ? 5 : 7),
+                    Width = on ? 10 : 6, Height = on ? 10 : 6, CornerRadius = new CornerRadius(on ? 3 : 2), Background = on ? (Brush)T.Main : T.Ctl, Margin = new Thickness(on ? 5 : 7),
                     HorizontalAlignment = right ? HorizontalAlignment.Right : HorizontalAlignment.Left, VerticalAlignment = top ? VerticalAlignment.Top : VerticalAlignment.Bottom
                 };
                 var cell = new Grid { Background = Brushes.Transparent, Cursor = Cursors.Hand, ToolTip = names[v] };
@@ -423,9 +450,10 @@ namespace Corner
 
             // ---- the panel itself
             setCol = look;
+            DrawPlanningSettings(); // first: plan by schedule or priority, the stopwatch, the work log (Work.cs)
             setCol.Children.Add(SetCaps("Panel"));
             var card = SetCard(setCol);
-            SetLine(card, SettingLine("Look", T.Glass ? "Frosted glass over what is behind" : "Sage, forest and lime", Segmented(T.Names, T.Skin, SetSkin))); // (Glass.cs)
+            SetLine(card, SkinPicker()); // Sage, Glass, Metal, Ceramic or Paper (Glass.cs, Material.cs)
             var size = new StackPanel { Orientation = Orientation.Horizontal };
             size.Children.Add(Step("–", () => { SetScale(CurrentScale - 0.05, true); DrawSettings(); }));
             size.Children.Add(new TextBlock { Text = (int)Math.Round(CurrentScale * 100) + "%", Width = 42, TextAlignment = TextAlignment.Center, FontSize = Z(11.5), FontWeight = SemiSmall, Foreground = T.Text, VerticalAlignment = VerticalAlignment.Center });
@@ -435,7 +463,12 @@ namespace Corner
             SetLine(card, SettingLine("Hot corner", corners[corner] + " opens the list", CornerPicker()));
             bool auto = Autostart.Enabled;
             SetLine(card, SettingLine("Start with Windows", null, Switch(auto, () => { Autostart.Set(!auto); DrawSettings(); })));
+            bool clicks = Settings.Get("Click", 1) > 0.5; // the tick when a task is ticked off or a switch is turned (Sound.cs)
+            SetLine(card, SettingLine("Click sounds", null, Switch(clicks, () => { Settings.Set("Click", clicks ? 0 : 1); DrawSettings(); })));
+            SetLine(card, SettingLine("Full Mode sides", Swapped ? "Energy on the left, tasks on the right" : "Tasks on the left, energy on the right",
+                Segmented(new[] { "Tasks left", "Energy left" }, Swapped ? 1 : 0, i => { Settings.Set("SwapSides", i); Swapped = i == 1; Restyle(); DrawSettings(); })));
             SetLine(card, SettingLine("Panel position", "Drag the header to move it", Btn("Reset", 1, () => { ResetPosition(); DrawSettings(); }, 1)));
+            DrawUpdates(card); // (Update.cs)
 
             // ---- energy and sleep
             setCol = feel;
@@ -447,6 +480,10 @@ namespace Corner
                 ? Tuning.Count + " of " + Tuning.MinRatings + " check-ins so far"
                 : (tune ? "Curve adjusted from " : "Off · ") + Tuning.Count + " check-ins";
             SetLine(card, SettingLine("Tuning", tuneStatus, Switch(tune, () => { Settings.Set("Tune", tune ? 0 : 1); RefreshEnergy(false); DrawSettings(); })));
+            int feels = Calibration.Count(Now());
+            if (feels > 0)
+                SetLine(card, SettingLine("Energy %", "Matched to " + feels + (feels == 1 ? " correction" : " corrections") + " you typed in",
+                    Btn("Reset", 1, () => { Calibration.Clear(); DrawSettings(); if (tab == 1 || full) DrawEnergy(); }, 1)));
             card.Children.Add(Rule(new Thickness(0)));
             sect = card; DrawPrayer(); sect = energyView; // "I usually wake for Fajr" (UiEnergy.cs)
 

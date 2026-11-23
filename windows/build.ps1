@@ -1,4 +1,4 @@
-# Builds Corner.exe with the C# compiler that ships with Windows. No SDK needed.
+﻿# Builds Corner.exe with the C# compiler that ships with Windows. No SDK needed.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ico  = Join-Path $root 'src\corner.ico'
@@ -78,6 +78,7 @@ Start-Sleep -Milliseconds 300
     "/r:$fw\WPF\PresentationCore.dll" "/r:$fw\WPF\PresentationFramework.dll" "/r:$fw\WPF\WindowsBase.dll" `
     "/r:$fw\System.Xaml.dll" "/r:$fw\System.Windows.Forms.dll" "/r:$fw\System.Drawing.dll" `
     "/r:$fw\System.Runtime.Serialization.dll" "/r:$fw\System.Xml.dll" "/r:$fw\System.Core.dll" `
+    "/r:$fw\System.IO.Compression.dll" "/r:$fw\System.IO.Compression.FileSystem.dll" `
     (Get-ChildItem (Join-Path $root 'src') -Filter *.cs | ForEach-Object FullName)
 if ($LASTEXITCODE -ne 0) { throw "Build failed" }
 "Built $out ($([math]::Round((Get-Item $out).Length / 1KB)) KB)"

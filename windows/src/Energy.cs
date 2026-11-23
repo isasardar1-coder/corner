@@ -162,12 +162,22 @@ namespace Corner
                     nap += NapLift * Math.Min(1, x.Minutes / NapLiftFull) * Math.Exp(-since / NapLiftTau)
                          - (longNap ? NapInertiaLong : NapInertiaShort) * Math.Exp(-since / (longNap ? NapInertiaTauLong : NapInertiaTauShort));
                 }
-                double fit = correction != null ? correction(t) : 0; // learned from your check-ins, by hours since waking (Checks.cs)
                 double raw = Math.Max(0, Math.Min(1, rhythm - PressureWeight * (s - RestedPressure) + nap));
-                e.All[i] = Math.Max(0, Math.Min(1, raw + fit));
+                e.All[i] = raw;
                 if (i >= n) continue;
-                plain[i] = Math.Max(0, Math.Min(1, rhythmPlain - PressureWeight * (sPlain - RestedPressure) + fit));
+                plain[i] = Math.Max(0, Math.Min(1, rhythmPlain - PressureWeight * (sPlain - RestedPressure)));
                 e.Raw[i] = raw;
+            }
+            // What the check-ins taught (Checks.cs) is added as one amount for each peak and for the dip, eased from one
+            // to the next. So a hump is lifted or lowered whole: it keeps its place and its even shape, and no check-in
+            // can put a bump of its own on a slope.
+            var fit = Reshape(plain, correction, dt);
+            for (int i = 0; i < nAll; i++)
+            {
+                double f = fit[Math.Min(i, n - 1)]; // past bedtime: as at bedtime
+                e.All[i] = Math.Max(0, Math.Min(1, e.All[i] + f));
+                if (i >= n) continue;
+                plain[i] = Math.Max(0, Math.Min(1, plain[i] + f));
                 e.Samples[i] = e.All[i];
             }
             e.GroggyUntil = e.Wake.AddHours(-InertiaTau * Math.Log(GroggyDone / InertiaDepth));
@@ -175,18 +185,39 @@ namespace Corner
             return e;
         }
 
-        static void FindZones(EnergyDay e, double[] s)
+        /// The correction for every sample of the day: the learned amount at the start of the day, at each peak, at the
+        /// dip and at bedtime, eased between them (level at each, so the peaks and the dip stay where they are).
+        static double[] Reshape(double[] plain, Func<double, double> correction, double dt)
+        {
+            int n = plain.Length;
+            var fit = new double[n];
+            if (correction == null || n < 3) return fit;
+            int m1, dip, m2;
+            Extremes(plain, out m1, out dip, out m2);
+            var at = new List<int> { 0 };
+            foreach (int k in dip >= 0 ? new[] { m1, dip, m2, n - 1 } : new[] { m1, n - 1 })
+                if (k > at[at.Count - 1]) at.Add(k);
+            var amount = at.Select(k => correction(k * dt)).ToArray();
+            for (int j = 0; j + 1 < at.Count; j++)
+                for (int i = at[j]; i <= at[j + 1]; i++)
+                {
+                    double x = (double)(i - at[j]) / (at[j + 1] - at[j]);
+                    fit[i] = amount[j] + (amount[j + 1] - amount[j]) * (1 - Math.Cos(Math.PI * x)) / 2;
+                }
+            return fit;
+        }
+
+        /// The dip (-1 when there is none worth the name) and the highest point on each side of it; with no dip, m1 is the top.
+        static void Extremes(double[] s, out int m1, out int dip, out int m2)
         {
             int n = s.Length;
-            if (n < 3) return;
-
             // The dip is the low point that stands out most: the one lying deepest below the highest point on each side of it.
-            // The peaks are those two highest points. (Taking "the first bump" as the morning peak is not safe: once the
-            // check-ins tune the curve it can have small bumps of its own, and the real dip was then lost.)
+            // The peaks are those two highest points. (Taking "the first bump" as the morning peak is not safe: a curve
+            // can have small bumps of its own, and the real dip was then lost.)
             var before = new double[n]; var after = new double[n];
             before[0] = s[0]; for (int i = 1; i < n; i++) before[i] = Math.Max(before[i - 1], s[i]);
             after[n - 1] = s[n - 1]; for (int i = n - 2; i >= 0; i--) after[i] = Math.Max(after[i + 1], s[i]);
-            int dip = -1, m1 = 0, m2 = -1; double depth = 0;
+            dip = -1; m1 = 0; m2 = -1; double depth = 0;
             for (int i = 1; i < n - 1; i++)
             {
                 double p = Math.Min(before[i], after[i]) - s[i];
@@ -198,10 +229,19 @@ namespace Corner
                 for (int i = 0; i <= dip; i++) if (s[i] > s[m1]) m1 = i;
                 m2 = dip; for (int i = dip; i < n; i++) if (s[i] > s[m2]) m2 = i;
             }
+            else for (int i = 0; i < n; i++) if (s[i] > s[m1]) m1 = i;
+        }
+
+        static void FindZones(EnergyDay e, double[] s)
+        {
+            int n = s.Length;
+            if (n < 3) return;
+            int dip, m1, m2;
+            Extremes(s, out m1, out dip, out m2);
             if (dip < 0)
             {
                 // one hump only: a single peak zone measured against the end of the day
-                int top = 0; for (int i = 0; i < n; i++) if (s[i] > s[top]) top = i;
+                int top = m1;
                 e.Peak1 = Run(e, s,top, s[top] - PeakBand * (s[top] - s[n - 1]), 0, n - 1, true, true);
                 return;
             }
@@ -608,13 +648,20 @@ namespace Corner
             tabLineTasks.Visibility = i == 0 ? Visibility.Visible : Visibility.Hidden; tabLineEnergy.Visibility = i == 1 ? Visibility.Visible : Visibility.Hidden;
             if (full)
             {   // Full Mode: no tabs; tasks on the left, energy on the right
+                ArrangeFull(true); // before DrawEnergy, so the plan is drawn into the tasks column
                 tabsRow.Visibility = Visibility.Collapsed;
                 tasksAdd.Visibility = Visibility.Visible; tasksScroll.Visibility = Visibility.Visible; energyScroll.Visibility = Visibility.Visible;
-                MoveEnergy(mainGrid, 1); energyScroll.Width = FullW / 2; // the second of two equal columns
+                Swapped = Settings.Get("SwapSides", 0) > 0.5;
+                MoveEnergy(mainGrid, Swapped ? 0 : 1); energyScroll.Width = FullW / 2; // the second of two equal columns (the first, when swapped)
+                Grid.SetColumn(leftDock, Swapped ? 1 : 0);
+                mainGrid.ColumnDefinitions[0].Width = Swapped ? GridLength.Auto : new GridLength(1, GridUnitType.Star);
+                mainGrid.ColumnDefinitions[1].Width = Swapped ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
                 LayoutTop(); DrawEnergy(); FocusLayout();
                 return;
             }
-            tabsRow.Visibility = Visibility.Visible; MoveEnergy(bodyGrid, 0); energyScroll.Width = double.NaN; LayoutTop();
+            tabsRow.Visibility = Visibility.Visible; MoveEnergy(bodyGrid, 0); energyScroll.Width = double.NaN;
+            Grid.SetColumn(leftDock, 0); mainGrid.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star); mainGrid.ColumnDefinitions[1].Width = GridLength.Auto;
+            LayoutTop();
             var tasksOn = i == 0 ? Visibility.Visible : Visibility.Collapsed;
             tasksAdd.Visibility = tasksOn; tasksScroll.Visibility = tasksOn; energyChip.Visibility = tasksOn;
             energyScroll.Visibility = i == 1 ? Visibility.Visible : Visibility.Collapsed;
@@ -762,7 +809,7 @@ namespace Corner
                 input.Text = "";
 
             }
-            if (mode == "checkin" || mode == "real") return; // "real" = whatever sleep.json is already in the test folder
+            if (mode == "checkin" || mode == "real" || mode == "realplan" || mode == "realsplit") return; // "real" = whatever sleep.json is already in the test folder
             var day = SleepLog.Today(Now());
             var short_ = new[] { 2, 3, 6, 9 };
             for (int i = 12; i >= 0; i--)
@@ -773,6 +820,6 @@ namespace Corner
             if (mode == "latenap") SleepLog.AddNap(day, day.AddHours(17), day.AddHours(17).AddMinutes(40));
         }
 
-        void DemoAfterShow(string mode) { if (mode == "all") { allOpen = true; FocusLayout(); } if (mode == "adding") { addOpen = true; FocusLayout(); } if (mode == "timer") { StartTimer(Upcoming()[0]); timerEnd = timerEnd.AddSeconds(-754); RepaintTimers(); DrawFocus(); } if (mode == "timeup") { StartTimer(Upcoming()[0]); TimeUp(); } if (mode == "timeuppop") { shown = false; gen++; Hide(); StartTimer(Upcoming()[0]); TimeUp(); } if (mode == "nextup") { CompleteTask(Upcoming()[0]); } if (mode == "moved") { if (Environment.GetEnvironmentVariable("CORNER_FULL") == "1") EnterFull(); moving = true; moveLeft = Left; moveTop = Top; Left -= 300; Top += 120; EndMove(); } if (Environment.GetEnvironmentVariable("CORNER_FULL") == "1") EnterFull(); if (mode == "editsplit") { SleepLog.Record(SleepLog.BuildSplit(new[] { new TimeSpan(23, 0, 0), new TimeSpan(4, 45, 0), new TimeSpan(6, 30, 0) }, new[] { new TimeSpan(4, 0, 0), new TimeSpan(6, 0, 0), new TimeSpan(7, 30, 0) }, SleepLog.Today(Now()))); RefreshEnergy(false); SetTab(1); OpenCheckIn(true); } if (mode == "energy" || mode == "real" || mode == "plan" || mode == "split" || mode == "nap" || mode == "latenap") SetTab(1); if (mode == "feedback") { Feedback.Log(Now(), "7", energy); ShowFeedback(Now()); } if (mode == "routines") { routinesOpen = true; SetTab(1); } if (mode == "drag") { SetTab(1); After(1200, () => { var p = chartThumb.PointToScreen(new Point(chartThumb.ActualWidth / 2, chartThumb.ActualHeight / 2)); IO.File.WriteAllText(IO.Path.Combine(Store.Dir, "thumb.txt"), (int)p.X + "," + (int)p.Y); }); } if (mode == "scroll") { chartOffset = 520; SetTab(1); } if (mode == "addroutine") { routinesOpen = true; newRoutineText = "Read a paper"; newRoutineEnergy = "high"; newRoutineMin = 45; SetTab(1); After(400, () => energyScroll.ScrollToEnd()); } if (mode == "debt") { debtOpen = true; SetTab(1); } if (mode == "history") { ToggleSettings(); After(400, () => settingsScroll.ScrollToEnd()); } if (mode == "settings") ToggleSettings(); if (mode == "plan") MakePlan(); if (mode == "applied") { MakePlan(); ApplyPlan(); SetTab(0); } if (mode == "routinesone") { routinesOpen = true; SetTab(1); AddRoutinesToToday(Routines.Data.Routines.Take(1)); } if (mode == "toglass" || mode == "tosage") { ToggleSettings(); After(300, () => SetSkin(mode == "toglass" ? 1 : 0)); } }
+        void DemoAfterShow(string mode) { if (mode == "all") { allOpen = true; FocusLayout(); } if (mode == "adding") { addOpen = true; FocusLayout(); } if (mode == "timer") { StartTimer(Upcoming()[0]); timerEnd = timerEnd.AddSeconds(-754); RepaintTimers(); DrawFocus(); } if (mode == "timeup") { StartTimer(Upcoming()[0]); TimeUp(); } if (mode == "timeuppop") { shown = false; gen++; Hide(); StartTimer(Upcoming()[0]); TimeUp(); } if (mode == "nextup") { CompleteTask(Upcoming()[0]); } if (mode == "moved") { if (Environment.GetEnvironmentVariable("CORNER_FULL") == "1") EnterFull(); moving = true; moveLeft = Left; moveTop = Top; Left -= 300; Top += 120; EndMove(); } if (Environment.GetEnvironmentVariable("CORNER_FULL") == "1") EnterFull(); if (mode == "editsplit") { SleepLog.Record(SleepLog.BuildSplit(new[] { new TimeSpan(23, 0, 0), new TimeSpan(4, 45, 0), new TimeSpan(6, 30, 0) }, new[] { new TimeSpan(4, 0, 0), new TimeSpan(6, 0, 0), new TimeSpan(7, 30, 0) }, SleepLog.Today(Now()))); RefreshEnergy(false); SetTab(1); OpenCheckIn(true); } if (mode == "energy" || mode == "real" || mode == "plan" || mode == "split" || mode == "nap" || mode == "latenap") SetTab(1); if (mode == "feedback") { Feedback.Log(Now(), "7", energy); ShowFeedback(Now()); } if (mode == "routines") { routinesOpen = true; SetTab(1); } if (mode == "drag") { SetTab(1); After(1200, () => { var p = chartThumb.PointToScreen(new Point(chartThumb.ActualWidth / 2, chartThumb.ActualHeight / 2)); IO.File.WriteAllText(IO.Path.Combine(Store.Dir, "thumb.txt"), (int)p.X + "," + (int)p.Y); }); } if (mode == "scroll") { chartOffset = 520; SetTab(1); } if (mode == "addroutine") { routinesOpen = true; newRoutineText = "Read a paper"; newRoutineEnergy = "high"; newRoutineMin = 45; SetTab(1); After(400, () => energyScroll.ScrollToEnd()); } if (mode == "debt") { debtOpen = true; SetTab(1); } if (mode == "history") { ToggleSettings(); After(400, () => settingsScroll.ScrollToEnd()); } if (mode == "settings") ToggleSettings(); if (mode == "plan") MakePlan(); if (mode == "realplan" || mode == "realsplit") { SetTab(1); MakePlan(); if (mode == "realsplit" && proposal.Any(x => x.CanSplit)) SplitInPlan(proposal.First(x => x.CanSplit).Id, true);  After(500, () => energyScroll.ScrollToEnd()); } if (mode == "applied") { MakePlan(); ApplyPlan(); SetTab(0); } if (mode == "routinesone") { routinesOpen = true; SetTab(1); AddRoutinesToToday(Routines.Data.Routines.Take(1)); } if (mode == "drawtime") { allOpen = true; FocusLayout(); DemoDrawTime(); } if (mode.StartsWith("toskin") && mode.Length == 7) { ToggleSettings(); int to = mode[6] - '0'; After(300, () => SetSkin(to)); } if (mode == "toglass" || mode == "tosage") { ToggleSettings(); After(300, () => SetSkin(mode == "toglass" ? 1 : 0)); } if (mode == "statsopen") { statOpen[0] = statOpen[2] = true; DrawEnergy(); } DemoWork(mode); }
     }
 }
