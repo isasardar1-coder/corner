@@ -84,11 +84,12 @@ public enum Feedback {
 // ---------------------------------------------------------------- tuning the curve from the check-ins
 
 /// Learns where the model is regularly too high or too low for you, by time since waking,
-/// and returns a small correction that is added to the curve. Nothing is changed until there are enough check-ins.
+/// and returns a small correction. The curve takes it at each peak and at the dip only, and eases between them,
+/// so it stays smooth (EnergyModel.reshape in Energy.swift). Nothing is changed until there are enough check-ins.
 public enum Tuning {
     public static let minRatings = 12             // check-ins needed before any correction is applied
     public static let windowDays = 60             // only check-ins from the last this-many days are used
-    public static let sigma: Double = 0.75        // hours; how far one check-in's influence spreads along the day
+    public static let sigma: Double = 1.25        // hours; how far one check-in's influence spreads along the day (a peak or the dip is a few hours wide)
     public static let shrink: Double = 1.5        // caution: a spot needs about this many nearby check-ins before it moves half way
     public static let minCorrelation: Double = 0.3 // below this your scores do not track the model enough to fit a slope
     public static let maxShift: Double = 0.15     // the most the curve may be moved at any point

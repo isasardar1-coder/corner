@@ -275,6 +275,12 @@ public final class PlanItem {
     public var start: Date
     var end: Int = 0
     var tried: Bool = false
+    public var splitOf: Int = 0                    // 1 or 2: this is that session of a task split across both peaks (0 = not split)
+    public var canSplit: Bool = false              // a high task that misses the first peak as one session, but would fit as two
+    public var splitA: Int = 0                     // the two sessions' minutes, when canSplit
+    public var splitB: Int = 0
+    public var splitAt1: Date = Date.distantPast   // and their starts
+    public var splitAt2: Date = Date.distantPast
 
     public init(id: String = "", title: String = "", level: String? = nil, routine: String? = nil, after: String? = nil,
                 prefer: String? = nil, minutes: Int = 0, part: Int = 0, physical: Bool = false, checkIn: Bool = false,
@@ -295,6 +301,39 @@ public enum Planner {
     public static let checkInGap = 60       // check-ins are at least this many minutes apart
     public static let checkInSpread = 120   // and at most about this far apart when the day has room
     public static let peakFit = 80          // percent of a task that must lie on a peak to count as "mostly on the peak"
+    public static let minSession = 30       // a split task's shorter session is at least this long
+
+    /// Plan, plus an offer on each high task that would not sit wholly on the first peak as one session but
+    /// fits as two (one on each peak): canSplit, with the two sessions' lengths and starts. `split` holds the ids
+    /// of the tasks the user chose to split; those come back as two items each (splitOf 1 and 2).
+    public static func propose(_ tasks: [TaskItem], energy e: EnergyDay, routines: [Routine]?, now: Date,
+                               keepStarted: Bool = false, split: Set<String>? = nil) -> [PlanItem] {
+        let result: [PlanItem] = Planner.plan(tasks, energy: e, routines: routines, now: now, keepStarted: keepStarted, split: split)
+        guard let peak1 = e.peak1 else { return result }
+        if e.peak2 == nil { return result }
+        let slack: Double = Double(EnergyDay.stepMin) / 2.0 + 0.5 // starts are on the 5-minute grid, the peak's edges are not
+        let earliest: Date = peak1.from.addingMinutes(-slack)
+        let latest: Date = peak1.to.addingMinutes(slack)
+        let candidates: [PlanItem] = result.filter { x in
+            x.level == "high" && !x.physical && !x.checkIn && x.splitOf == 0 && x.minutes >= 2 * minSession
+        }
+        for it in candidates {
+            if it.placed && it.start >= earliest && it.start.addingMinutes(it.minutes) <= latest { continue } // already wholly on the first peak
+            var s: Set<String> = split ?? Set<String>()
+            s.insert(it.id)
+            let alt: [PlanItem] = Planner.plan(tasks, energy: e, routines: routines, now: now, keepStarted: keepStarted, split: s)
+            let itemId: String = it.id
+            guard let a = alt.first(where: { $0.id == itemId && $0.splitOf == 1 }) else { continue }
+            guard let b = alt.first(where: { $0.id == itemId && $0.splitOf == 2 }) else { continue }
+            if !a.placed || !b.placed { continue }
+            it.canSplit = true
+            it.splitA = a.minutes
+            it.splitB = b.minutes
+            it.splitAt1 = a.start
+            it.splitAt2 = b.start
+        }
+        return result
+    }
 
     /// The end of the time Plan fills when planning at `now`: an hour before bed, or bedtime itself once
     /// less than half an hour is left before that hour, so a plan made late in the evening still has room.
@@ -311,7 +350,9 @@ public enum Planner {
     }
 
     /// keepStarted: planned tasks whose start time has already passed stay where they are (used when re-planning after a nap).
-    public static func plan(_ tasks: [TaskItem], energy e: EnergyDay, routines: [Routine]?, now: Date, keepStarted: Bool = false) -> [PlanItem] {
+    /// split: ids of the high tasks to plan as two sessions, one on each peak (see propose).
+    public static func plan(_ tasks: [TaskItem], energy e: EnergyDay, routines: [Routine]?, now: Date, keepStarted: Bool = false,
+                            split: Set<String>? = nil) -> [PlanItem] {
         func started(_ t: TaskItem) -> Bool {
             if !(keepStarted && t.planned && t.hasTime) { return false }
             guard let d = t.dueAt else { return false }
@@ -324,6 +365,7 @@ public enum Planner {
         let key = CornerTime.formatDay(day)
         var taken = [Bool](repeating: false, count: n)
         var zone = [Int](repeating: 0, count: n)   // 1 = peak, 2 = dip
+        var peakNo = [Int](repeating: 0, count: n) // 1 = the first peak, 2 = the second
         let wake = e.wake
         func idx(_ t: Date) -> Int {
             let x = NetFormat.round(t.timeIntervalSince(wake) / 60 / Double(step))
@@ -333,8 +375,14 @@ public enum Planner {
             guard let z = z else { return }
             for i in stride(from: idx(z.from), to: idx(z.to), by: 1) { zone[i] = v }
         }
+        func fillPeakNo(_ z: Zone?, _ v: Int) {
+            guard let z = z else { return }
+            for i in stride(from: idx(z.from), to: idx(z.to), by: 1) { peakNo[i] = v }
+        }
         fillZone(e.peak1, 1)
+        fillPeakNo(e.peak1, 1)
         fillZone(e.peak2, 1)
+        fillPeakNo(e.peak2, 2)
         fillZone(e.dip, 2)
         for nap in e.naps {
             for i in stride(from: idx(nap.from), to: idx(nap.to), by: 1) { taken[i] = true } // never inside a logged sleep period
@@ -472,6 +520,50 @@ public enum Planner {
             return at >= 0 ? at : find(it, from, { _ in true })
         }
 
+        // A task the user chose to split: one session wholly on the first peak, the other wholly on the second.
+        // The two lengths are as even as the peaks allow, each at least minSession.
+        func onPeak(_ p: PlanItem, _ i: Int, _ no: Int) -> Bool {
+            for k in i..<(i + lenOf(p)) {
+                if k >= n || peakNo[k] != no { return false }
+            }
+            return true
+        }
+        func trySplit(_ it: PlanItem) -> Bool {
+            let total: Int = it.minutes
+            let from: Int = notBefore(it)
+            if total < 2 * minSession { return false }
+            var sizes: [Int] = []
+            var m = minSession
+            while m <= total - minSession {
+                sizes.append(m)
+                m += step
+            }
+            let ordered: [Int] = sizes.sorted { x, y in
+                let kx: Int = abs(2 * x - total)
+                let ky: Int = abs(2 * y - total)
+                if kx != ky { return kx < ky }
+                return x > y
+            }
+            for a in ordered {
+                let p1 = PlanItem(minutes: a)
+                let p2 = PlanItem(minutes: total - a)
+                let i1: Int = find(p1, from, { i in onPeak(p1, i, 1) })
+                if i1 < 0 { continue }
+                let i2: Int = find(p2, i1 + lenOf(p1) + gap, { i in onPeak(p2, i, 2) })
+                if i2 < 0 { continue }
+                it.minutes = a
+                it.splitOf = 1
+                place(it, i1)
+                let second = PlanItem(id: it.id, title: it.title, level: it.level, routine: it.routine, minutes: total - a)
+                second.splitOf = 2
+                second.tried = true
+                items.append(second)
+                place(second, i2)
+                return true
+            }
+            return false
+        }
+
         // Order of choosing; within each group, the order in the task list.
         let groups: [(PlanItem) -> Bool] = [
             { x in x.prefer == "early" },                       // the early block, with everything chained after it
@@ -487,6 +579,9 @@ public enum Planner {
                 for it in members {
                     if it.placed || it.tried || it.checkIn || plannedPred(it) != nil { continue }
                     it.tried = true
+                    if let chosen = split, chosen.contains(it.id), it.level == "high", !it.physical {
+                        if trySplit(it) { continue }
+                    }
                     let at = choose(it, notBefore(it))
                     if at >= 0 { place(it, at) }
                 }

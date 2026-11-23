@@ -632,6 +632,97 @@ enum Program {
         check("a high task longer than the peak takes the highest-energy slot that is mostly on it",
               p5[0].placed && peakShare(en, p5[0].start, 240) >= 0.8 && avgE(en, p5[0]) >= bestE - 1e-9, f(avgE(en, p5[0]), 4) + " vs best " + f(bestE, 4))
 
+        // a 90-minute high task planned when only part of the first peak is left: offered as two sessions, one per peak
+        do {
+            let spAt = en.peak1!.to.addingMinutes(-60) // an hour of the first peak left
+            let wr = task("Writing", "high", 90)
+            let spOne = Planner.propose([wr], energy: en, routines: nil, now: spAt, keepStarted: false, split: nil)
+            var spLine = "  90m high task with 60m of the first peak left: "
+            spLine += spOne.map { x in x.placed ? EnergyDay.clock(x.start) : "--" }.joined(separator: ", ")
+            if spOne[0].canSplit {
+                spLine += " (offer " + String(spOne[0].splitA) + "m " + EnergyDay.clock(spOne[0].splitAt1)
+                spLine += " + " + String(spOne[0].splitB) + "m " + EnergyDay.clock(spOne[0].splitAt2) + ")"
+            }
+            print(spLine)
+            let spOffer: Bool = spOne.count == 1 && spOne[0].canSplit && spOne[0].splitA + spOne[0].splitB == 90
+            check("split: offered when one session misses the first peak", spOffer && spOne[0].splitA >= Planner.minSession && spOne[0].splitB >= Planner.minSession)
+            let spTwo = Planner.propose([wr], energy: en, routines: nil, now: spAt, keepStarted: false, split: Set<String>([wr.id]))
+            let s1 = spTwo.first(where: { $0.splitOf == 1 })
+            let s2 = spTwo.first(where: { $0.splitOf == 2 })
+            var spTwoOk = false
+            if let x1 = s1, let x2 = s2, let pk1 = en.peak1, let pk2 = en.peak2 {
+                let firstOk: Bool = x1.placed && x1.start >= spAt && x1.start >= pk1.from && x1.start.addingMinutes(x1.minutes) <= pk1.to
+                let secondOk: Bool = x2.placed && x2.start >= pk2.from && x2.start.addingMinutes(x2.minutes) <= pk2.to
+                spTwoOk = firstOk && secondOk && x1.minutes + x2.minutes == 90
+            }
+            check("split: two sessions, first wholly on peak 1, second wholly on peak 2", spTwoOk)
+            var spEven = false
+            if let x1 = s1, let x2 = s2 { spEven = x1.minutes == 45 && x2.minutes == 45 }
+            check("split: as even as the peaks allow (45 + 45 here)", spEven)
+            let spEarly = Planner.propose([task("Writing", "high", 90)], energy: en, routines: nil, now: en.wake, keepStarted: false, split: nil)
+            check("split: not offered when the task fits wholly on the first peak", spEarly[0].placed && !spEarly[0].canSplit)
+            let spLate = Planner.propose([task("Writing", "high", 90)], energy: en, routines: nil, now: en.peak1!.to.addingMinutes(10), keepStarted: false, split: nil)
+            check("split: not offered once the first peak is over", !spLate[0].canSplit)
+            let shortT = Planner.propose([task("Short", "high", 50)], energy: en, routines: nil, now: spAt.addingMinutes(30), keepStarted: false, split: nil)
+            check("split: not offered for a task under two sessions' worth (" + String(2 * Planner.minSession) + "m)", !shortT[0].canSplit)
+        }
+
+        // ------------------------------------------------------------------ 4b2. the energy counter, matched to you
+        print("== 4b2. Energy counter corrections")
+        do {
+            let cNow = CornerTime.make(2026, 11, 23, 12, 0)!
+            let calnone: [Calibration.Entry] = []
+            check("no corrections: the counter is the curve", abs(Calibration.map(0.30, calnone, cNow) - 0.30) < 1e-9)
+            let calone: [Calibration.Entry] = [Calibration.Entry(at: cNow, model: 0.30, felt: 0.63)]
+            check("one correction: 30% read as 63%", abs(Calibration.map(0.30, calone, cNow) - 0.63) < 1e-9)
+            check("one correction shifts the rest of the day too", abs(Calibration.map(0.40, calone, cNow) - 0.73) < 1e-9)
+            let calspread: [Calibration.Entry] = [
+                Calibration.Entry(at: cNow.addingHours(-5), model: 0.30, felt: 0.40),
+                Calibration.Entry(at: cNow.addingHours(-3), model: 0.40, felt: 0.60),
+                Calibration.Entry(at: cNow.addingHours(-1), model: 0.50, felt: 0.80),
+            ]
+            check("several apart on the curve: the scale stretches", abs(Calibration.map(0.45, calspread, cNow) - 0.70) < 1e-9)
+            let calold: [Calibration.Entry] = [Calibration.Entry(at: cNow.addingDays(-90), model: 0.30, felt: 0.90)]
+            check("corrections older than 60 days are left out", abs(Calibration.map(0.30, calold, cNow) - 0.30) < 1e-9)
+            check("never above 100%", Calibration.map(0.95, calone, cNow) <= 1)
+
+            // what a correction may lead to: a re-plan, or a high-effort task now
+            func zn(_ fromMin: Int, _ toMin: Int) -> Zone {
+                return Zone(from: cNow.dateOnly.addingMinutes(fromMin), to: cNow.dateOnly.addingMinutes(toMin), peak: false)
+            }
+            func zoneDay(_ p1: Zone?, _ dp: Zone?, _ p2: Zone?) -> EnergyDay {
+                let d = EnergyDay()
+                d.peak1 = p1
+                d.dip = dp
+                d.peak2 = p2
+                return d
+            }
+            let dayA = zoneDay(zn(540, 690), zn(810, 930), zn(1080, 1260))
+            let dayB = zoneDay(zn(545, 695), zn(810, 930), zn(1080, 1260))
+            let dayC = zoneDay(zn(540, 720), zn(810, 930), zn(1080, 1260))
+            let dayD = zoneDay(zn(540, 690), nil, zn(1080, 1260))
+            check("re-plan: a 5-minute shift is not a move", !FeelPlan.zonesMoved(dayA, dayB))
+            check("re-plan: the peak ending 30 min later is a move", FeelPlan.zonesMoved(dayA, dayC))
+            check("re-plan: a dip that disappears is a move", FeelPlan.zonesMoved(dayA, dayD))
+            func tk(_ title: String, _ lvl: String, _ due: Date?) -> TaskItem {
+                let t = TaskItem(id: title, title: title, energy: lvl)
+                if let d = due { t.setDue(d, hasTime: true) }
+                return t
+            }
+            var hiTasks: [TaskItem] = [tk("Email", "low", nil), tk("Writing", "high", cNow.addingHours(6)), tk("Report", "high", nil)]
+            let hiPick: TaskItem? = FeelPlan.highNow(hiTasks, felt: 0.63, shown: 30, now: cNow, inTask: false)
+            var hiPickOk = false
+            if let picked = hiPick { hiPickOk = picked.title == "Writing" }
+            check("energy now: offers the high-effort task timed later today", hiPickOk)
+            check("energy now: no offer when you feel only a little above the counter", FeelPlan.highNow(hiTasks, felt: 0.63, shown: 55, now: cNow, inTask: false) == nil)
+            check("energy now: no offer when you feel low", FeelPlan.highNow(hiTasks, felt: 0.40, shown: 10, now: cNow, inTask: false) == nil)
+            check("energy now: no offer while a task timer runs", FeelPlan.highNow(hiTasks, felt: 0.63, shown: 30, now: cNow, inTask: true) == nil)
+            hiTasks.append(tk("Deep read", "high", cNow.addingMinutes(30)))
+            check("energy now: no offer when one is coming up within the hour", FeelPlan.highNow(hiTasks, felt: 0.63, shown: 30, now: cNow, inTask: false) == nil)
+        }
+
+        // 4c. Updates: not ported. The C# checks here test the Windows self-updater (Update.cs), which has no Swift counterpart.
+
         // ------------------------------------------------------------------ 4b. completion log (done.csv, days.csv)
         print("== 4b. Completion log")
         do {
@@ -713,6 +804,102 @@ enum Program {
         }
         let mine2 = NeedEstimate.build(realNights, Feedback.read(), Date())
         print("  your own data: " + mine2.note)
+
+        // ------------------------------------------------------------------ work log, habits and the order by priority (Work.swift)
+        print("== Work log, habits, priority")
+        let pwPartsDay: Bool = Habits.part(day.addingHours(8)) == 0 && Habits.part(day.addingHours(12.5)) == 1 && Habits.part(day.addingHours(15)) == 2
+        let pwPartsNight: Bool = Habits.part(day.addingHours(19)) == 3 && Habits.part(day.addingHours(2)) == 3
+        check("parts of the day: 08:00 morning, 12:30 noon, 15:00 afternoon, 19:00 and 02:00 evening", pwPartsDay && pwPartsNight)
+        let pwRow = WorkRow(start: day.addingHours(9).addingTimeInterval(5), end: day.addingHours(9.75), minutes: 44.9, id: "a1", title: "Write, \"concept\" 14",
+                            effort: "high", kind: "mental", ended: "paused", planned: 45, e0: 48, e1: 61)
+        var pwOk = false
+        if let pwBack = WorkLog.parse(WorkLog.line(pwRow)) {
+            let pwSame: Bool = pwBack.start == pwRow.start && pwBack.end == pwRow.end && pwBack.title == pwRow.title && pwBack.effort == "high"
+            let pwNums: Bool = pwBack.e0 == 48 && pwBack.e1 == 61 && pwBack.felt < 0 && pwBack.ended == "paused" && pwBack.planned == 45
+            pwOk = pwSame && pwNums
+        }
+        check("a row of work.csv reads back as written (title with a comma and quotes, energy 48 -> 61, no typed %)", pwOk, WorkLog.line(pwRow))
+        if FileManager.default.fileExists(atPath: WorkLog.file) { try? FileManager.default.removeItem(atPath: WorkLog.file) }
+        WorkLog.forget()
+        WorkLog.add(pwRow)
+        WorkLog.forget()
+        let pwText: String = (try? String(contentsOfFile: WorkLog.file, encoding: .utf8)) ?? ""
+        let pwLines: [String] = pwText.components(separatedBy: "\r\n").filter { !$0.isEmpty }
+        let pwRows: [WorkRow] = WorkLog.rows
+        check("work.csv: a heading, then one row per stretch", pwLines.count == 2 && pwLines[0].hasSuffix(WorkLog.head) && pwRows.count == 1 && pwRows[0].id == "a1")
+        var pwMidnight = false
+        if let pwLate = WorkLog.parse("2026-11-20,23:50:00,00:10:00,20,x,Late,low,mental,no,30,40,35,,paused,evening") {
+            pwMidnight = pwLate.end == CornerTime.make(2026, 11, 21, 0, 10)!
+        }
+        check("a stretch across midnight ends the next day", pwMidnight)
+
+        func pwW(_ title: String, _ daysAgo: Int, _ hour: Double, _ mins: Double, _ effort: String) -> WorkRow {
+            let st: Date = day.addingDays(-daysAgo).addingHours(hour)
+            return WorkRow(start: st, end: st.addingMinutes(mins), minutes: mins, id: title + String(daysAgo), title: title,
+                           effort: effort, kind: "mental", ended: "completed")
+        }
+        let pwLog: [WorkRow] = [
+            pwW("Emails", 1, 8, 22, "low"), pwW("Emails", 2, 9, 31, "low"), pwW("emails ", 4, 8.5, 18, "low"), pwW("Emails", 0, 8, 60, "low"),
+            pwW("Gym", 1, 9, 50, "high"), pwW("Gym", 3, 9, 50, "high"),
+            pwW("Reading", 1, 20, 40, "low"), pwW("Reading", 2, 20, 40, "low"), pwW("Reading", 3, 21, 40, "low"),
+            pwW("Old habit", 30, 8, 30, "low"), pwW("Old habit", 31, 8, 30, "low"), pwW("Old habit", 32, 8, 30, "low"),
+        ]
+        let pwUsual: [Habits.Habit] = Habits.usual(pwLog, 0, day.addingHours(9))
+        let pwUsualNames: String = pwUsual.map { h in h.title + " x" + String(h.days) }.joined(separator: ", ")
+        check("usual in the morning: only what was done on 3 of the last 28 days (not twice, not a month ago, not in the evening)",
+              pwUsual.count == 1 && pwUsual[0].title == "Emails" && pwUsual[0].days == 3, pwUsualNames)
+        check("its length is the middle of the real minutes, to the nearest five; today is not counted", pwUsual.count == 1 && pwUsual[0].minutes == 20,
+              pwUsual.count == 1 ? String(pwUsual[0].minutes) + " min" : "")
+        let pwEvening: [String] = Habits.usual(pwLog, 3, day.addingHours(20)).map { h in h.title }
+        check("usual in the evening: Reading", pwEvening == ["Reading"])
+
+        let pwPeak: Date = normal.peak1!.from.addingMinutes(10)
+        let pwDip: Date = normal.dip!.from.addingMinutes(10)
+        func pwT(_ title: String, _ effort: String?, _ mins: Int) -> TaskItem {
+            return TaskItem(id: title, title: title, energy: effort, minutes: mins)
+        }
+        func pwNames(_ ranked: [Ranked]) -> String {
+            return ranked.map { r in r.task.title }.joined(separator: " > ")
+        }
+        let pwTasks: [TaskItem] = [pwT("Tidy desk", "low", 15), pwT("Review", "medium", 30), pwT("Write concept", "high", 45), pwT("Plain", nil, 0)]
+        let pwOnPeak: [Ranked] = Priority.rank(pwTasks, energy: normal, now: pwPeak, level: 0.6, rows: nil, working: nil)
+        let pwOnPeakOk: Bool = pwOnPeak[0].task.title == "Write concept" && pwOnPeak[0].why == "fits your peak" && pwOnPeak[pwOnPeak.count - 1].task.title == "Tidy desk"
+        check("on a peak: the high-effort task first, the low-effort one last, and it says why", pwOnPeakOk, pwNames(pwOnPeak))
+        let pwInDip: [Ranked] = Priority.rank(pwTasks, energy: normal, now: pwDip, level: 0.5, rows: nil, working: nil)
+        let pwInDipOk: Bool = pwInDip[0].task.title == "Tidy desk" && pwInDip[0].why == "light work for the dip" && pwInDip[pwInDip.count - 1].task.title == "Write concept"
+        check("in the dip: the low-effort task first, the high-effort one last", pwInDipOk, pwNames(pwInDip))
+        let pwDue = pwT("Call the bank", "low", 10)
+        pwDue.setDue(pwPeak.addingMinutes(-30), hasTime: true)
+        let pwLater = pwT("Next week's thing", "high", 45)
+        pwLater.setDue(pwPeak.dateOnly.addingDays(3), hasTime: false)
+        var pwMore: [TaskItem] = [pwLater, pwDue]
+        pwMore.append(contentsOf: pwTasks)
+        let pwMixed: [Ranked] = Priority.rank(pwMore, energy: normal, now: pwPeak, level: 0.6, rows: nil, working: nil)
+        let pwDueWhy: String = "due at " + EnergyDay.clock(pwPeak.addingMinutes(-30))
+        let pwMixedFirst: Bool = pwMixed[0].task === pwDue && pwMixed[0].why == pwDueWhy
+        let pwMixedLast: Bool = pwMixed[pwMixed.count - 1].task === pwLater && pwMixed[pwMixed.count - 1].later
+        check("a time you set that has passed comes first, with no word of \"overdue\"; a task dated for a later day comes last",
+              pwMixedFirst && pwMixedLast, pwNames(pwMixed))
+        let pwWorking: [Ranked] = Priority.rank(pwTasks, energy: normal, now: pwPeak, level: 0.6, rows: nil, working: "Tidy desk")
+        check("the task being worked on stays first", pwWorking[0].task.title == "Tidy desk")
+        let pwPlanned = pwT("Placed by an old schedule", "low", 10)
+        pwPlanned.setDue(pwPeak.addingMinutes(-30), hasTime: true)
+        pwPlanned.planned = true
+        let pwOld: [Ranked] = Priority.rank([pwPlanned, pwTasks[2]], energy: normal, now: pwPeak, level: 0.6, rows: nil, working: nil)
+        check("a time an old schedule gave a task does not count as due", pwOld[0].task === pwTasks[2])
+        let pwTwo: [TaskItem] = [pwT("Notes", "low", 20), pwT("Emails", "low", 20)]
+        let pwHabit: [Ranked] = Priority.rank(pwTwo, energy: normal, now: day.addingHours(9), level: 0.5, rows: pwLog, working: nil)
+        check("of two like tasks, the one you usually do at this time of day goes first", pwHabit[0].task.title == "Emails" && pwHabit[0].why == "usual for your morning",
+              pwNames(pwHabit) + " (" + (pwHabit[0].why ?? "") + ")")
+        let pwGym = pwT("Gym", "high", 45)
+        pwGym.kind = "physical"
+        let pwAt17: [Ranked] = Priority.rank([pwT("Notes", nil, 20), pwGym], energy: normal, now: day.addingHours(17), level: 0.5, rows: nil, working: nil)
+        check("physical work goes first in the late afternoon", pwAt17[0].task === pwGym && pwAt17[0].why == "good time for physical work", pwNames(pwAt17))
+        let pwTired: [Ranked] = Priority.rank([pwT("Hard", "high", 30), pwT("Easy", "low", 30)], energy: nil, now: day.addingHours(22), level: 0.2, rows: nil, working: nil)
+        check("no curve and a low counter: the low-effort task first", pwTired[0].task.title == "Easy" && pwTired[0].why == "low energy now", pwNames(pwTired))
+        let pwAgain: String = pwNames(Priority.rank(pwTasks, energy: normal, now: pwPeak, level: 0.6, rows: nil, working: nil))
+        let pwPlain: String = pwNames(Priority.rank([pwT("A", nil, 0), pwT("B", nil, 0), pwT("C", nil, 0)], energy: normal, now: pwPeak, level: 0.6, rows: nil, working: nil))
+        check("same input, same order (ties keep the list's order)", pwAgain == pwNames(pwOnPeak) && pwPlain == "A > B > C")
 
         print(fails == 0 ? "ALL PASS" : String(fails) + " FAILED")
     }

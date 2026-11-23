@@ -36,13 +36,13 @@
   23:00-09:00   : wake 09:00 bed 23:00 groggy<10:05 peak1 10:05-11:55 dip 13:55-15:50 peak2 17:45-21:30 debt 0.00h  E@10=0.648 E@14.5=0.465 E@19=0.615
   PASS     zones present and ordered
   -- with a tuning correction added to the curve
-  early lift, then low (0.5h +, 1.6h -): wake 07:00 bed 23:00 groggy<08:05 peak1 08:05-11:45 dip 13:45-15:45 peak2 17:45-21:35 debt 0.00h  E@10=0.607 E@14.5=0.410 E@19=0.572
+  early lift, then low (0.5h +, 1.6h -): wake 07:00 bed 23:00 groggy<08:05 peak1 08:05-11:05 dip 13:30-15:45 peak2 17:45-21:35 debt 0.00h  E@10=0.559 E@14.5=0.410 E@19=0.572
   PASS     tuned curve keeps peak, dip (12:30-16:30) and second peak
-  sharper morning, flatter evening    : wake 07:00 bed 23:00 groggy<08:05 peak1 08:05-10:35 dip 13:50-15:40 peak2 19:15-21:45 debt 0.00h  E@10=0.690 E@14.5=0.410 E@19=0.492
+  sharper morning, flatter evening    : wake 07:00 bed 23:00 groggy<08:05 peak1 08:05-11:30 dip 14:05-15:45 peak2 17:45-21:45 debt 0.00h  E@10=0.737 E@14.5=0.411 E@19=0.533
   PASS     tuned curve keeps peak, dip (12:30-16:30) and second peak
-  late-evening bump (15h +)           : wake 07:00 bed 23:00 groggy<08:05 peak1 08:05-11:25 dip 13:45-15:45 peak2 17:45-22:30 debt 0.00h  E@10=0.623 E@14.5=0.410 E@19=0.565
+  late-evening bump (15h +)           : wake 07:00 bed 23:00 groggy<08:05 peak1 08:05-11:25 dip 13:50-15:45 peak2 17:45-22:15 debt 0.00h  E@10=0.623 E@14.5=0.410 E@19=0.536
   PASS     tuned curve keeps peak, dip (12:30-16:30) and second peak
-  ripple                              : wake 07:00 bed 23:00 groggy<08:05 peak1 08:05-11:05 dip 13:55-14:40 peak2 17:35-21:25 debt 0.00h  E@10=0.663 E@14.5=0.373 E@19=0.547
+  ripple                              : wake 07:00 bed 23:00 groggy<08:05 peak1 08:05-11:25 dip 13:45-15:45 peak2 17:45-22:10 debt 0.00h  E@10=0.581 E@14.5=0.398 E@19=0.545
   PASS     tuned curve keeps peak, dip (12:30-16:30) and second peak
 == 2. Sleep debt
   real sleep.json: wake 07:30 bed 23:40 groggy<08:35 peak1 08:35-11:40 dip 13:50-15:55 peak2 18:00-22:05 debt 7.21h  E@10=0.572 E@14.5=0.301 E@19=0.511
@@ -153,6 +153,28 @@
   a high task longer than the peak
     07:40-11:40  high        Thesis                      peak (83% peak, 0% dip)  avgE=0.605
   PASS  a high task longer than the peak takes the highest-energy slot that is mostly on it   [0.6046 vs best 0.6046]
+  90m high task with 60m of the first peak left: 17:45 (offer 45m 10:25 + 45m 17:45)
+  PASS  split: offered when one session misses the first peak
+  PASS  split: two sessions, first wholly on peak 1, second wholly on peak 2
+  PASS  split: as even as the peaks allow (45 + 45 here)
+  PASS  split: not offered when the task fits wholly on the first peak
+  PASS  split: not offered once the first peak is over
+  PASS  split: not offered for a task under two sessions' worth (60m)
+== 4b2. Energy counter corrections
+  PASS  no corrections: the counter is the curve
+  PASS  one correction: 30% read as 63%
+  PASS  one correction shifts the rest of the day too
+  PASS  several apart on the curve: the scale stretches
+  PASS  corrections older than 60 days are left out
+  PASS  never above 100%
+  PASS  re-plan: a 5-minute shift is not a move
+  PASS  re-plan: the peak ending 30 min later is a move
+  PASS  re-plan: a dip that disappears is a move
+  PASS  energy now: offers the high-effort task timed later today
+  PASS  energy now: no offer when you feel only a little above the counter
+  PASS  energy now: no offer when you feel low
+  PASS  energy now: no offer while a task timer runs
+  PASS  energy now: no offer when one is coming up within the hour
 == 4b. Completion log
   PASS  done.csv: one row per task that stayed done, title with comma and quotes intact   [2 rows]
   2 done of 5, high 1/1, routines 0/1, on peak 1
@@ -168,4 +190,21 @@
   PASS  a true need of 6h15: never suggests under the 7h floor
   PASS  assumed nights (skipped mornings) are not used
   your own data: Corner can suggest your sleep need once 14 days have an entered night and 2 check-ins. 4 so far.
+== Work log, habits, priority
+  PASS  parts of the day: 08:00 morning, 12:30 noon, 15:00 afternoon, 19:00 and 02:00 evening
+  PASS  a row of work.csv reads back as written (title with a comma and quotes, energy 48 -> 61, no typed %)   [2026-11-21,09:00:05,09:45:00,44.9,a1,"Write, ""concept"" 14",high,mental,no,45,48,61,,paused,morning]
+  PASS  work.csv: a heading, then one row per stretch
+  PASS  a stretch across midnight ends the next day
+  PASS  usual in the morning: only what was done on 3 of the last 28 days (not twice, not a month ago, not in the evening)   [Emails x3]
+  PASS  its length is the middle of the real minutes, to the nearest five; today is not counted   [20 min]
+  PASS  usual in the evening: Reading
+  PASS  on a peak: the high-effort task first, the low-effort one last, and it says why   [Write concept > Review > Plain > Tidy desk]
+  PASS  in the dip: the low-effort task first, the high-effort one last   [Tidy desk > Review > Plain > Write concept]
+  PASS  a time you set that has passed comes first, with no word of "overdue"; a task dated for a later day comes last   [Call the bank > Write concept > Review > Plain > Tidy desk > Next week's thing]
+  PASS  the task being worked on stays first
+  PASS  a time an old schedule gave a task does not count as due
+  PASS  of two like tasks, the one you usually do at this time of day goes first   [Emails > Notes (usual for your morning)]
+  PASS  physical work goes first in the late afternoon   [Gym > Notes]
+  PASS  no curve and a low counter: the low-effort task first   [Easy > Hard]
+  PASS  same input, same order (ties keep the list's order)
 ALL PASS

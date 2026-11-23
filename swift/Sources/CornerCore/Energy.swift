@@ -78,7 +78,7 @@ public enum EnergyModel {
     }
 
     /// The day's curve from the sleep log. Nil when no valid night ends on or before `day`.
-    /// `correction` (from Tuning) is added to the curve, by hours since waking.
+    /// `correction` (from Tuning, by hours since waking) is read at each peak and at the dip, and eased between them (reshape).
     public static func build(_ nights: [Night]?, need: Double, day dayIn: Date, correction: ((Double) -> Double)? = nil) -> EnergyDay? {
         let day = dayIn.dateOnly
         let candidates = (nights ?? []).filter { $0.valid && $0.wokeAt.dateOnly <= day }
@@ -187,12 +187,21 @@ public enum EnergyModel {
                 let groggy: Double = (longNap ? napInertiaLong : napInertiaShort) * exp(-since / (longNap ? napInertiaTauLong : napInertiaTauShort))
                 nap += lift - groggy
             }
-            let fit: Double = correction != nil ? correction!(t) : 0 // learned from your check-ins, by hours since waking (Checks.swift)
-            let raw = max(0, min(1, rhythm - pressureWeight * (s - restedPressure) + nap))
-            e.all[i] = max(0, min(1, raw + fit))
+            let raw: Double = max(0, min(1, rhythm - pressureWeight * (s - restedPressure) + nap))
+            e.all[i] = raw
             if i >= n { continue }
-            plain[i] = max(0, min(1, rhythmPlain - pressureWeight * (sPlain - restedPressure) + fit))
+            plain[i] = max(0, min(1, rhythmPlain - pressureWeight * (sPlain - restedPressure)))
             e.raw[i] = raw
+        }
+        // What the check-ins taught (Checks.swift) is added as one amount for each peak and for the dip, eased from one
+        // to the next. So a hump is lifted or lowered whole: it keeps its place and its even shape, and no check-in
+        // can put a bump of its own on a slope.
+        let fit: [Double] = reshape(plain, correction, dt)
+        for i in 0..<nAll {
+            let f: Double = fit[min(i, n - 1)] // past bedtime: as at bedtime
+            e.all[i] = max(0, min(1, e.all[i] + f))
+            if i >= n { continue }
+            plain[i] = max(0, min(1, plain[i] + f))
             e.samples[i] = e.all[i]
         }
         e.groggyUntil = e.wake.addingHours(-inertiaTau * log(groggyDone / inertiaDepth))
@@ -200,12 +209,43 @@ public enum EnergyModel {
         return e
     }
 
-    static func findZones(_ e: EnergyDay, _ s: [Double]) {
-        let n = s.count
-        if n < 3 { return }
+    /// The correction for every sample of the day: the learned amount at the start of the day, at each peak, at the
+    /// dip and at bedtime, eased between them (level at each, so the peaks and the dip stay where they are).
+    static func reshape(_ plain: [Double], _ correction: ((Double) -> Double)?, _ dt: Double) -> [Double] {
+        let n = plain.count
+        var fit = [Double](repeating: 0, count: n)
+        guard let corr = correction else { return fit }
+        if n < 3 { return fit }
+        let ex = extremes(plain)
+        var at: [Int] = [0]
+        let marks: [Int] = ex.dip >= 0 ? [ex.m1, ex.dip, ex.m2, n - 1] : [ex.m1, n - 1]
+        for k in marks {
+            if k > at[at.count - 1] { at.append(k) }
+        }
+        var amount: [Double] = []
+        for k in at { amount.append(corr(Double(k) * dt)) }
+        var j = 0
+        while j + 1 < at.count {
+            let a0: Int = at[j]
+            let a1: Int = at[j + 1]
+            let width = Double(a1 - a0)
+            for i in a0...a1 {
+                let x: Double = Double(i - a0) / width
+                let ease: Double = (1 - cos(Double.pi * x)) / 2
+                fit[i] = amount[j] + (amount[j + 1] - amount[j]) * ease
+            }
+            j += 1
+        }
+        return fit
+    }
 
+    /// The dip (-1 when there is none worth the name) and the highest point on each side of it; with no dip, m1 is the top.
+    static func extremes(_ s: [Double]) -> (m1: Int, dip: Int, m2: Int) {
+        let n = s.count
+        if n < 3 { return (0, -1, -1) } // (the callers never pass fewer than three samples)
         // The dip is the low point that stands out most: the one lying deepest below the highest point on each side of it.
-        // The peaks are those two highest points.
+        // The peaks are those two highest points. (Taking "the first bump" as the morning peak is not safe: a curve
+        // can have small bumps of its own, and the real dip was then lost.)
         var before = [Double](repeating: 0, count: n)
         var after = [Double](repeating: 0, count: n)
         before[0] = s[0]
@@ -225,11 +265,22 @@ public enum EnergyModel {
             for i in 0...dip { if s[i] > s[m1] { m1 = i } }
             m2 = dip
             for i in dip..<n { if s[i] > s[m2] { m2 = i } }
+        } else {
+            for i in 0..<n { if s[i] > s[m1] { m1 = i } }
         }
+        return (m1, dip, m2)
+    }
+
+    static func findZones(_ e: EnergyDay, _ s: [Double]) {
+        let n = s.count
+        if n < 3 { return }
+        let ex = extremes(s)
+        let dip: Int = ex.dip
+        let m1: Int = ex.m1
+        let m2: Int = ex.m2
         if dip < 0 {
             // one hump only: a single peak zone measured against the end of the day
-            var top = 0
-            for i in 0..<n { if s[i] > s[top] { top = i } }
+            let top = m1
             e.peak1 = run(e, s, top, s[top] - peakBand * (s[top] - s[n - 1]), 0, n - 1, true, true)
             return
         }

@@ -30,6 +30,7 @@ let package = Package(
                 .copy("Resources/Gilroy-SemiBold.ttf"),
                 .copy("Resources/Gilroy-SemiBoldItalic.ttf"),
                 .copy("Resources/ping.wav"),
+                .copy("Resources/logo.png"),
             ]
         ),
     ],

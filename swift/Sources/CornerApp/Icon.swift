@@ -1,30 +1,76 @@
-// Corner for macOS - the menu-bar icon (a template image: a rounded square with a tick, drawn black so macOS can
-// colour it for the menu bar) and the app icon (drawn once by package.sh with `Corner --icon <png>`).
+// Corner for macOS - the menu-bar icon (a template image: the hot-corner picture, a screen with a mark in its chosen
+// corner, drawn black so macOS can colour it for the menu bar) and the app icon (the sunburst logo, drawn once by
+// package.sh with `Corner --icon <png>`).
+//
+// On Windows both are pictures, not paths: Logo.cs and HotIcon.cs hold PNGs. The app icon here is that same logo
+// picture (Resources/logo.png). The menu-bar icon is the hot-corner picture drawn again as plain shapes, with the places
+// and sizes measured from the dark picture (design/hot-corner-sunburst/hc-dark.png), because a template image keeps
+// only the alpha of a picture and the glass picture is one solid slab.
 import AppKit
 import CornerCore
 
 enum Icon {
+    // The hot-corner picture, measured from hc-dark.png. The screen is 1260 x 929 px there; every number below is a
+    // share of the screen's width (x, sizes) or of its height (y, from the top).
+    private static let screenAspect: CGFloat = 929.0 / 1260.0 // height / width
+    private static let screenRadius: CGFloat = 0.19           // corner radius / width
+    private static let chosenSize: CGFloat = 0.18             // the chosen corner's mark (top right), side / width
+    private static let chosenX: CGFloat = 0.805               // its centre
+    private static let chosenY: CGFloat = 0.240
+    private static let dotSize: CGFloat = 0.097               // the other three marks, side / width
+    private static let dotLeft: CGFloat = 0.181               // their centres
+    private static let dotRight: CGFloat = 0.819
+    private static let dotTop: CGFloat = 0.241
+    private static let dotBottom: CGFloat = 0.747
+    private static let markRadius: CGFloat = 0.30             // a mark's corner radius / its side
+    private static let dotCut: CGFloat = 0.6                  // how much of the ink a small mark takes away (the chosen one takes all)
+
     static func menuBar() -> NSImage {
         let img = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
-            NSColor.black.setStroke()
-            let box = NSBezierPath(roundedRect: NSRect(x: 2.5, y: 2.5, width: 13, height: 13), xRadius: 4, yRadius: 4)
-            box.lineWidth = 1.6
-            box.stroke()
-            let tick = NSBezierPath()
-            tick.move(to: NSPoint(x: 5.6, y: 9.2))
-            tick.line(to: NSPoint(x: 8, y: 6.6))
-            tick.line(to: NSPoint(x: 12.6, y: 11.6))
-            tick.lineWidth = 1.7
-            tick.lineCapStyle = .round
-            tick.lineJoinStyle = .round
-            tick.stroke()
+            guard let cg = NSGraphicsContext.current?.cgContext else { return false }
+            // The screen, 16.5 pt wide, in the middle of the 18 pt square.
+            let w: CGFloat = 16.5
+            let h: CGFloat = w * Icon.screenAspect
+            let x0: CGFloat = (18 - w) / 2
+            let top: CGFloat = 18 - (18 - h) / 2 // the y of the screen's top edge (y points up here)
+            let screen = CGRect(x: x0, y: top - h, width: w, height: h)
+            let r: CGFloat = w * Icon.screenRadius
+
+            // (A layer of its own, so the cutting takes ink from the screen only and never from what lies behind the icon.)
+            cg.saveGState()
+            cg.beginTransparencyLayer(auxiliaryInfo: nil)
+            cg.setFillColor(CGColor(gray: 0, alpha: 1))
+            cg.addPath(CGPath(roundedRect: screen, cornerWidth: r, cornerHeight: r, transform: nil))
+            cg.fillPath()
+
+            // The marks are cut out of the screen: the chosen one right through, the other three part of the way.
+            cg.setBlendMode(.destinationOut)
+            let small: CGFloat = w * Icon.dotSize
+            let dots: [(CGFloat, CGFloat)] = [(Icon.dotLeft, Icon.dotTop), (Icon.dotLeft, Icon.dotBottom), (Icon.dotRight, Icon.dotBottom)]
+            cg.setFillColor(CGColor(gray: 0, alpha: Icon.dotCut))
+            for d in dots {
+                cg.addPath(Icon.mark(centreX: x0 + w * d.0, centreY: top - h * d.1, side: small))
+                cg.fillPath()
+            }
+            cg.setFillColor(CGColor(gray: 0, alpha: 1))
+            cg.addPath(Icon.mark(centreX: x0 + w * Icon.chosenX, centreY: top - h * Icon.chosenY, side: w * Icon.chosenSize))
+            cg.fillPath()
+            cg.endTransparencyLayer()
+            cg.restoreGState()
             return true
         }
         img.isTemplate = true
         return img
     }
 
-    /// The app icon at 1024 x 1024: a sage tile with a lime disc and a dark tick.
+    /// One mark of the hot-corner picture: a rounded square about a centre.
+    private static func mark(centreX: CGFloat, centreY: CGFloat, side: CGFloat) -> CGPath {
+        let rect = CGRect(x: centreX - side / 2, y: centreY - side / 2, width: side, height: side)
+        let r: CGFloat = side * Icon.markRadius
+        return CGPath(roundedRect: rect, cornerWidth: r, cornerHeight: r, transform: nil)
+    }
+
+    /// The app icon at 1024 x 1024: the sunburst logo (Resources/logo.png) in the 824 x 824 tile area, clear outside it.
     static func writeAppIcon(_ path: String) {
         let size = 1024
         guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: size, pixelsHigh: size, bitsPerSample: 8, samplesPerPixel: 4,
@@ -35,24 +81,11 @@ enum Icon {
         let s = CGFloat(size)
         NSColor.clear.setFill()
         NSRect(x: 0, y: 0, width: s, height: s).fill()
-        let tile = NSBezierPath(roundedRect: NSRect(x: 100, y: 100, width: 824, height: 824), xRadius: 185, yRadius: 185)
-        NSColor(srgbRed: 0xE8 / 255.0, green: 0xEC / 255.0, blue: 0xDB / 255.0, alpha: 1).setFill()
-        tile.fill()
-        NSColor(srgbRed: 0xD3 / 255.0, green: 0xD9 / 255.0, blue: 0xC2 / 255.0, alpha: 1).setStroke()
-        tile.lineWidth = 6
-        tile.stroke()
-        let disc = NSBezierPath(ovalIn: NSRect(x: 262, y: 262, width: 500, height: 500))
-        NSColor(srgbRed: 0xB4 / 255.0, green: 0xC1 / 255.0, blue: 0x2A / 255.0, alpha: 1).setFill()
-        disc.fill()
-        let tick = NSBezierPath()
-        tick.move(to: NSPoint(x: 395, y: 520))
-        tick.line(to: NSPoint(x: 480, y: 432))
-        tick.line(to: NSPoint(x: 640, y: 608))
-        tick.lineWidth = 46
-        tick.lineCapStyle = .round
-        tick.lineJoinStyle = .round
-        NSColor(srgbRed: 0x16 / 255.0, green: 0x28 / 255.0, blue: 0x1D / 255.0, alpha: 1).setStroke()
-        tick.stroke()
+        if let url = Resources.url("logo", "png"), let logo = NSImage(contentsOf: url) {
+            ctx.imageInterpolation = .high
+            logo.draw(in: NSRect(x: 100, y: 100, width: 824, height: 824), from: NSRect.zero, operation: .sourceOver, fraction: 1)
+        }
+        ctx.flushGraphics()
         NSGraphicsContext.restoreGraphicsState()
         if let data = rep.representation(using: .png, properties: [:]) {
             try? data.write(to: URL(fileURLWithPath: path))

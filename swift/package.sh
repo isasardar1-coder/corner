@@ -12,7 +12,7 @@ rm -rf out
 APP=out/Corner.app
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN/Corner" "$APP/Contents/MacOS/Corner"
-cp Sources/CornerApp/Resources/*.ttf Sources/CornerApp/Resources/ping.wav "$APP/Contents/Resources/"
+cp Sources/CornerApp/Resources/*.ttf Sources/CornerApp/Resources/ping.wav Sources/CornerApp/Resources/logo.png "$APP/Contents/Resources/"
 
 # the icon: drawn by the app itself, then cut into an .icns
 ICON=out/icon

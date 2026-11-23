@@ -407,19 +407,21 @@ public final class TaskItem: Codable {
     public var routine: String?    // id of the routine this task came from
     public var routineDay: String? // the day it was added for
     public var part: Int           // 1..n for a routine's check-ins
+    public var worked: Double      // seconds worked on it so far, from its timer (Work.swift)
 
     public static let fmt = "yyyy-MM-ddTHH:mm"
 
     public init(id: String = "", title: String = "", done: Bool = false, doneAt: String? = nil, due: String? = nil,
                 hasTime: Bool = false, notified: Bool = false, energy: String? = nil, minutes: Int = 0, planned: Bool = false,
-                kind: String? = nil, routine: String? = nil, routineDay: String? = nil, part: Int = 0) {
+                kind: String? = nil, routine: String? = nil, routineDay: String? = nil, part: Int = 0, worked: Double = 0) {
         self.id = id; self.title = title; self.done = done; self.doneAt = doneAt; self.due = due
         self.hasTime = hasTime; self.notified = notified; self.energy = energy; self.minutes = minutes; self.planned = planned
         self.kind = kind; self.routine = routine; self.routineDay = routineDay; self.part = part
+        self.worked = worked
     }
 
     enum CodingKeys: String, CodingKey {
-        case Id, Title, Done, DoneAt, Due, HasTime, Notified, Energy, Minutes, Planned, Kind, Routine, RoutineDay, Part
+        case Id, Title, Done, DoneAt, Due, HasTime, Notified, Energy, Minutes, Planned, Kind, Routine, RoutineDay, Part, Worked
     }
 
     public init(from decoder: Decoder) throws {
@@ -438,6 +440,7 @@ public final class TaskItem: Codable {
         routine = try c.decodeIfPresent(String.self, forKey: .Routine)
         routineDay = try c.decodeIfPresent(String.self, forKey: .RoutineDay)
         part = try c.decodeIfPresent(Int.self, forKey: .Part) ?? 0
+        worked = try c.decodeIfPresent(Double.self, forKey: .Worked) ?? 0
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -456,6 +459,7 @@ public final class TaskItem: Codable {
         if let v = routine { try c.encode(v, forKey: .Routine) }
         if let v = routineDay { try c.encode(v, forKey: .RoutineDay) }
         if part != 0 { try c.encode(part, forKey: .Part) }
+        if worked != 0 { try c.encode(worked, forKey: .Worked) }
     }
 
     public var dueAt: Date? {
