@@ -78,7 +78,7 @@ final class GenieWarp {
         self.logo = logo
         self.opening = opening
         self.ms = ms
-        self.coarse = pw * ph > 3_000_000
+        self.coarse = pw * ph > 2_000_000 // (Full Mode on a screen with two pixels to the point)
         self.t = opening ? 0 : 1
         if pw < 2 || ph < 4 { return nil }
         let n: Int = max(2, min(GenieWarp.maxSlices, ph / 2)) // two pixel rows each, or more: smooth curved sides
@@ -223,7 +223,7 @@ struct GenieLayer {
 final class GenieStage {
     /// The test renders that show an animation as frames side by side.
     static let demoModes: [String] = ["launch", "launchclose", "hoveropen", "hoverclose", "fullswitch", "fullexit", "cycleopen", "cycleclose",
-                                      "hoverback", "hoveragain", "fullearly"]
+                                      "hoverback", "hoveragain", "fullearly", "hoverbottom"]
     /// Those renders paint the sand backdrop themselves, behind every frame: the panel's own view is left clear.
     static var clearBackdrop = false
     static let iconSide: CGFloat = 64
@@ -251,6 +251,7 @@ final class GenieStage {
     var entering = false        // the corner panel's picture is on top; the window is about to change to Full Mode under it
     var leaving = false         // Full Mode's picture is on top, flowing back down; the window is about to go under it
     var fades = 0               // (counts the uses of the see-through window: a fade that has been overtaken does nothing)
+    var unseenSince: Double = 0 // (see watchUnseen)
     var dirty: CGRect = .zero   // the part of the see-through window the flight under way draws in
 
     var revealStart: Double = -1   // the parts growing in under the pointer; -1 = not running
@@ -272,6 +273,17 @@ final class GenieStage {
     }
 
     func now() -> Double { return manual ? clock : PanelController.ms() }
+
+    /// Nothing is flying, held or about to fly.
+    var idle: Bool { return warp == nil && !pending && !entering && !leaving }
+
+    /// The panel is on its way out of its corner as one picture (or about to be): what the pointer brings in waits.
+    var flyingOut: Bool {
+        if !opening { return false }
+        if pending { return true }
+        if let w = warp { return w.opening }
+        return false
+    }
 
     /// The app icon's picture (the logo, Resources/logo.png), made small once.
     static let logo: CGImage? = GenieStage.loadLogo()
@@ -613,7 +625,11 @@ extension PanelController {
 
     /// Out of the icon's square; with the app icon in it when Corner starts.
     func genieOpen(icon: Bool) {
-        if !model.shown || model.full { return }
+        if !model.shown || model.full {
+            fx.pending = false
+            fx.opening = false
+            return
+        }
         place(animated: false)
         var ok = false
         if let pic = GenieStage.picture(hosting) {
@@ -771,6 +787,22 @@ extension PanelController {
         return runGenie(pic, to: window.frame, neck: cornerIcon(), neckPic: nil, opening: false, ms: 480, showIcon: false, done: nil)
     }
 
+    /// From mouseTick, a safeguard: the panel waits unseen only while its picture is flying. Should it ever be left
+    /// open and unseen with nothing flying for more than half a second, it is simply shown.
+    func watchUnseen(_ now: Double) {
+        if model.shown && fx.idle && window.isVisible && window.alphaValue < 0.05 {
+            if fx.unseenSince == 0 {
+                fx.unseenSince = now
+            } else if now - fx.unseenSince > 600 {
+                fx.unseenSince = 0
+                fx.opening = false
+                window.alphaValue = 1
+            }
+        } else {
+            fx.unseenSince = 0
+        }
+    }
+
     // ------------------------------------------------------------ growing in under the pointer
 
     /// From AppModel.reveal: the header, the chips and what else the pointer brings in grow from nothing over 200 ms.
@@ -794,6 +826,7 @@ extension PanelController {
         let early: Bool = mode.hasPrefix("launch") || mode.hasPrefix("hover") || mode == "fullearly" // the panel itself flies out
         if early { demoBegin() }
         if mode.hasPrefix("launch") { fx.launchZoom = true }
+        if mode == "hoverbottom" { model.setCorner(3) } // bottom left: the funnel the other way up, the panel growing upwards
         demoSeed(mode)
         showPanel(peekMs: 600000)
         model.reveal()
@@ -801,7 +834,7 @@ extension PanelController {
         let open: [Double] = [30, 80, 130, 190, 280, 450, 700]
         let close: [Double] = [120, 240, 330, 420, 520, 640]
         switch mode {
-        case "launch", "hoveropen":
+        case "launch", "hoveropen", "hoverbottom":
             demoAfter(0.7) { s in s.demoFrames(path, open, 0, 0) }
         case "launchclose", "hoverclose":
             demoAfter(0.7) { s in
@@ -815,7 +848,7 @@ extension PanelController {
             demoAfter(1.2) { s in
                 s.demoBegin()
                 s.enterFull()
-                s.demoAfter(0.9) { s2 in s2.demoFrames(path, [40, 110, 190, 280, 390, 560, 700], 0, 0) }
+                s.demoAfter(0.9) { s2 in s2.demoFrames(path, [40, 110, 190, 280, 390, 590, 700], 0, 0) }
             }
         case "fullexit":
             demoAfter(1.2) { s in

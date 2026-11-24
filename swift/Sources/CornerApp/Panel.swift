@@ -534,7 +534,9 @@ final class PanelController: NSObject, NSMenuDelegate {
     /// About 60 times a second: rest the pointer in the corner for 140 ms to open the panel; it hides 260 ms after
     /// the pointer leaves the panel and the room round it. Not while a mouse button is down (a window's buttons sit there).
     func mouseTick() {
-        if model.demoRun || model.full || fx.entering { return }
+        if model.demoRun { return }
+        watchUnseen(PanelController.ms()) // (Genie.swift)
+        if model.full || fx.entering { return }
         guard let scr = screen else { return }
         let p = NSEvent.mouseLocation
         let sb = scr.frame

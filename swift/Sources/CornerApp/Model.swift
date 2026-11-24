@@ -231,7 +231,7 @@ final class AppModel: ObservableObject {
         if !bare { return }
         if let fx = shell?.fx {
             if !demoRun { fx.icon = false } // the pointer came onto the startup panel: it closes into its corner, without the icon
-            if fx.opening { fx.revealWaiting = true; return } // still coming out as one picture: the rest grows when it has landed
+            if fx.flyingOut { fx.revealWaiting = true; return } // still coming out as one picture: the rest grows when it has landed
         }
         let was = isBare
         bare = false
