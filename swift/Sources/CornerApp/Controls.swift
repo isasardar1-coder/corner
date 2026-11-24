@@ -190,7 +190,7 @@ enum Icons {
 
 // ---------------------------------------------------------------- buttons, chips, switches
 
-/// A button, always a pill. kind: 0 = the main action (lime), 1 = secondary (a plain pill), 2 = quiet (text only).
+/// A button, always a pill. kind: 0 = the main action (T.main), 1 = secondary (a plain pill), 2 = quiet (text only).
 /// on: what it sits on: 0 = the panel or a tray, 1 = white, 2 = the dark prompt.
 struct Btn: View {
     let text: String
@@ -202,17 +202,17 @@ struct Btn: View {
     @State private var hot = false
 
     var ink: Color {
-        if kind == 0 { return T.onAccent }
+        if kind == 0 { return T.onMain }
         if on == 2 { return kind == 1 ? T.onStrong : (hot ? T.onStrong : T.onStrongSoft) }
         if kind == 1 { return T.text }
         return hot ? T.text : T.muted
     }
-    var ground: Color {
-        if kind == 0 { return T.accent }
-        if kind == 2 { return Color.clear }
-        if on == 2 { return hot ? T.strongLift : Color.clear }
-        if on == 1 { return hot ? T.ctl : T.raised }
-        return hot ? T.lift : T.field
+    var ground: Tone {
+        if kind == 0 { return .main }
+        if kind == 2 { return .clear }
+        if on == 2 { return hot ? .strongLift : .clear }
+        if on == 1 { return hot ? .ctl : .raised }
+        return hot ? .lift : .field
     }
 
     var body: some View {
@@ -228,7 +228,7 @@ struct Btn: View {
             .padding(.horizontal, hp)
             .padding(.top, vp)
             .padding(.bottom, vp + 1)
-            .background(Capsule().fill(ground))
+            .plate(ground)
             .overlay(Capsule().strokeBorder(kind == 1 && on == 2 ? T.strongLine : Color.clear, lineWidth: 1))
             .opacity(kind == 0 && hot ? 0.88 : 1)
             .contentShape(Capsule())
@@ -249,21 +249,22 @@ struct Chip<Content: View>: View {
         content()
             .frame(width: width, height: 30)
             .frame(maxWidth: width == nil ? .infinity : nil)
-            .background(Capsule().fill(on ? T.strong : (hot ? T.lift : T.field)))
+            .plate(on ? .strong : (hot ? .lift : .field))
             .contentShape(Capsule())
             .onHover { hot = $0 }
             .onTapGesture { action() }
     }
 }
 
-/// An on/off switch: a forest track with a lime knob when on.
+/// An on/off switch. On, its track is the colour of the main button and of a chosen tab, with the knob in that
+/// colour's text colour. It is flat in every skin.
 struct Toggle2: View {
     let on: Bool
     let action: () -> Void
     var body: some View {
         ZStack(alignment: on ? .trailing : .leading) {
-            Capsule().fill(on ? T.strong : T.ctl)
-            Circle().fill(on ? T.accent : T.field).frame(width: 14, height: 14).padding(.horizontal, 3)
+            Capsule().fill(on ? T.main : T.ctl)
+            Circle().fill(on ? T.onMain : T.knob).frame(width: 14, height: 14).padding(.horizontal, 3)
         }
         .frame(width: 36, height: 20)
         .contentShape(Capsule())
@@ -271,7 +272,8 @@ struct Toggle2: View {
     }
 }
 
-/// One choice out of a few, as joined segments; the chosen one is forest green. Drawn for a white surface.
+/// One choice out of a few, as joined segments; the chosen one is the colour of the main button. Drawn for a
+/// white surface.
 struct Segmented: View {
     let names: [String]
     let chosen: Int
@@ -283,18 +285,18 @@ struct Segmented: View {
             ForEach(0..<names.count, id: \.self) { i in
                 Text(names[i])
                     .font(m.font(11))
-                    .foregroundColor(i == chosen ? T.onStrong : T.muted)
+                    .foregroundColor(i == chosen ? T.onMain : T.muted)
                     .fixedSize()
                     .padding(.horizontal, 11)
                     .padding(.top, 3)
                     .padding(.bottom, 4)
-                    .background(Capsule().fill(i == chosen ? T.strong : Color.clear))
+                    .plate(i == chosen ? .main : .clear)
                     .contentShape(Capsule())
                     .onTapGesture { if i != chosen { pick(i) } }
             }
         }
         .padding(3)
-        .background(Capsule().fill(T.raised))
+        .plate(.raised)
     }
 }
 
@@ -342,7 +344,7 @@ struct StepBtn: View {
             .font(m.font(12))
             .foregroundColor(T.text)
             .frame(width: 26, height: height)
-            .background(Capsule().fill(hot ? T.ctl : T.raised))
+            .plate(hot ? .ctl : .raised)
             .contentShape(Capsule())
             .onHover { hot = $0 }
             .onTapGesture { action() }
@@ -364,7 +366,7 @@ struct DatePill: View {
             .padding(.trailing, m.slim ? 8 : 10)
             .padding(.top, m.slim ? 3 : 4)
             .padding(.bottom, m.slim ? 4 : 5)
-            .background(Capsule().fill(hot ? T.ctl : T.raised))
+            .plate(hot ? .ctl : .raised)
             .contentShape(Capsule())
             .onHover { hot = $0 }
             .onTapGesture { action() }
@@ -521,7 +523,7 @@ final class TimeEntryModel: ObservableObject, Identifiable {
 
 struct TimeEntryView: View {
     @ObservedObject var e: TimeEntryModel
-    var surface: Color? = nil
+    var surface: Tone? = nil
     var onSubmit: () -> Void = {}
     @Environment(\.m) var m
     @FocusState private var focused: Bool
@@ -542,7 +544,7 @@ struct TimeEntryView: View {
         .padding(.trailing, 7)
         .padding(.vertical, 5)
         .frame(width: 92, alignment: .leading)
-        .background(Capsule().fill(surface ?? T.field))
+        .plate(surface ?? .field)
         .overlay(Capsule().strokeBorder(focused ? T.strong : Color.clear, lineWidth: 1.5))
     }
 }
@@ -552,7 +554,7 @@ struct MiniBox: View {
     @Binding var text: String
     var width: CGFloat = 24
     var bad: Bool = false
-    var surface: Color? = nil
+    var surface: Tone? = nil
     var onSubmit: () -> Void = {}
     @Environment(\.m) var m
 
@@ -566,7 +568,7 @@ struct MiniBox: View {
             .padding(.leading, 10)
             .padding(.trailing, 9)
             .padding(.vertical, 5)
-            .background(Capsule().fill(surface ?? T.field))
+            .plate(surface ?? .field)
     }
 }
 
@@ -628,29 +630,39 @@ struct FitHeightKey: PreferenceKey {
 enum FitScrollFlag { static var plain = false }
 
 /// A vertical scroll view as tall as its content, up to maxHeight.
+/// What is inside is made again when the skin changes (its id is the skin), so that every part of it is drawn in
+/// the new colours; the scroll view itself stays, and with it how far it is scrolled.
 struct FitScroll<Content: View>: View {
     let maxHeight: CGFloat
     @ViewBuilder let content: () -> Content
     @State private var h: CGFloat = 0
 
     var body: some View {
+        // a made skin: room under the last box for the shadow it casts, inside what is cut off (Material.swift)
+        let room: CGFloat = T.made ? 8 : 0
         Group {
             if FitScrollFlag.plain {
                 VStack(spacing: 0) {
                     content()
+                        .id(T.skin)
                         .fixedSize(horizontal: false, vertical: true)
                         .background(GeometryReader { g in Color.clear.preference(key: FitHeightKey.self, value: g.size.height) })
                     Spacer(minLength: 0)
                 }
                 .frame(height: max(1, min(h, maxHeight)), alignment: .top)
+                .padding(.bottom, room)
                 .clipped()
+                .padding(.bottom, -room)
             } else {
                 ScrollView(.vertical, showsIndicators: false) {
                     content()
+                        .id(T.skin)
                         .background(GeometryReader { g in Color.clear.preference(key: FitHeightKey.self, value: g.size.height) })
+                        .padding(.bottom, room)
                 }
-                .frame(height: max(1, min(h, maxHeight)))
+                .frame(height: max(1, min(h, maxHeight)) + room)
                 .clipped()
+                .padding(.bottom, -room)
             }
         }
         .onPreferenceChange(FitHeightKey.self) { v in if abs(v - h) > 0.5 { h = v } }
@@ -658,9 +670,9 @@ struct FitScroll<Content: View>: View {
     }
 }
 
-/// A box with the panel's corner radius: a tray (T.tray) or a white card (T.field).
+/// A box with the panel's corner radius: a tray (.tray) or a white card (.field).
 struct CardBox<Content: View>: View {
-    let surface: Color
+    let surface: Tone
     var padded: Bool = true
     @ViewBuilder let content: () -> Content
     @Environment(\.m) var m
@@ -669,16 +681,16 @@ struct CardBox<Content: View>: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, padded ? m.padX : 0)
             .padding(.vertical, padded ? m.padY : 0)
-            .background(RoundedRectangle(cornerRadius: m.radius, style: .continuous).fill(surface))
-            .overlay(Rim(radius: m.radius))
+            .plate(surface, radius: m.radius, rim: m.radius)
     }
 }
 
-/// Glass only: the hairline round a box, bright at the top and faint at the bottom.
+/// Glass only: the hairline round a box, bright at the top and faint at the bottom. Drawn by Plate (Material.swift).
 struct Rim: View {
     let radius: CGFloat
+    var on: Bool = true
     var body: some View {
-        if T.glass {
+        if on && T.glass {
             RoundedRectangle(cornerRadius: radius, style: .continuous)
                 .stroke(LinearGradient(colors: [Color(hex: "#B8FFFFFF"), Color(hex: "#5FDFEAF2")], startPoint: .top, endPoint: .bottom), lineWidth: 1)
         }

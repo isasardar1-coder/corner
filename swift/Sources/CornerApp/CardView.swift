@@ -23,6 +23,7 @@ struct CardView: View {
         VStack(alignment: .leading, spacing: 0) {
             if showHeader {
                 HeaderView()
+                    .id(T.skin) // made again when the skin changes, as what scrolls under it is (FitScroll)
                     .background(GeometryReader { g in Color.clear.preference(key: HeaderHeightKey.self, value: g.size.height) })
             }
             if model.settingsOpen {
@@ -42,17 +43,23 @@ struct CardView: View {
     }
 }
 
-/// The panel itself: pale sage with a darker edge, or (Glass) the frosted view of what is behind under a cool tint.
+/// The panel itself: pale sage with a darker edge; or (Glass) the frosted view of what is behind under a cool tint;
+/// or (Metal, Ceramic, Paper) the skin's sheet: a brushed plate, a slab of stoneware, a card with a grain
+/// (Material.swift). The notice and the welcome window are made of the same.
 struct PanelBackground: View {
     let radius: CGFloat
+    var skin: Int = T.skin // (kept, so that a change of skin draws it again)
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         ZStack(alignment: .top) {
-            if T.glass {
+            if skin == 1 {
                 Frost().clipShape(shape)
                 shape.fill(T.glassTint)
                 T.glassSheen.frame(height: 54).clipShape(shape)
                 shape.stroke(T.glassRim, lineWidth: 1)
+            } else if skin >= 2 {
+                shape.fill(T.bg)
+                SheetGrain(skin: skin, radius: radius)
             } else {
                 shape.fill(T.bg)
                 shape.stroke(T.edge, lineWidth: 1)
@@ -138,8 +145,7 @@ struct HeadIcon: View {
     var body: some View {
         Glyph(d: d, color: T.text, th: th, w: size, h: size)
             .frame(width: cell, height: cell)
-            .background(Circle().fill(hot ? T.lift : T.field))
-            .overlay(Rim(radius: cell / 2))
+            .plate(hot ? .lift : .field, rim: cell / 2)
             .contentShape(Circle())
             .onHover { hot = $0 }
             .onTapGesture { action() }
@@ -167,8 +173,7 @@ struct RingDisc: View {
         .frame(width: 24, height: 24)
         .scaleEffect(k)
         .frame(width: cell, height: cell)
-        .background(Circle().fill(T.field))
-        .overlay(Rim(radius: cell / 2))
+        .plate(.field, rim: cell / 2)
         .help(all == 0 ? "Progress: fills as tasks are ticked off" : "Progress: " + String(done) + " of " + String(all) + " tasks done")
     }
 }
@@ -248,7 +253,7 @@ struct FocusView: View {
 
     var body: some View {
         let up = model.upcoming()
-        CardBox(surface: T.tray) {
+        CardBox(surface: .tray) {
             if let t = up.first {
                 FocusTop(t: t)
                 FocusTitle(t: t)
@@ -360,15 +365,14 @@ struct ThenChip: View {
             .font(m.font(11.5)).foregroundColor(T.muted).lineLimit(1).truncationMode(.tail)
             .padding(.horizontal, m.sp(14, 12))
             .frame(height: m.sp(34, 30))
-            .background(Capsule().fill(T.field))
-            .overlay(Rim(radius: 15))
+            .plate(.field, rim: 15)
             .help("Then: " + n.title + "\n" + AppModel.infoText(n))
     }
 }
 
 /// How a timer pill looks at this moment.
 struct PillLook {
-    var ground: Color = Color.clear
+    var ground: Tone = .clear
     var ink: Color = Color.clear
     var text: String = ""
     var showText: Bool = true
@@ -403,7 +407,7 @@ struct TimerPill: View {
         .padding(.trailing, big ? m.sp(16, 14) : 8)
         .padding(.vertical, big ? 0 : 2)
         .frame(height: big ? m.sp(34, 30) : nil)
-        .background(Capsule().fill(k.ground))
+        .plate(k.ground)
         .opacity(big && hot ? 0.9 : 1)
         .contentShape(Capsule())
         .onHover { hot = $0 }
@@ -421,18 +425,19 @@ struct TimerPill: View {
         k.running = running
         k.semi = big || mine
         if big {
-            k.ground = running ? T.accent : T.strong
-            k.ink = running ? T.onAccent : T.onStrong
+            // waiting: the colour of the main button; running: the accent
+            k.ground = running ? .accent : .main
+            k.ink = running ? T.onAccent : T.onMain
         } else if mine {
-            k.ground = T.accent
+            k.ground = .accent
             k.ink = T.onAccent
         } else {
-            k.ground = Color.clear
+            k.ground = .clear
             k.ink = hot ? T.text : T.muted
         }
         if begun && model.elapsed(t) > Double(mins * 60) {
             // past its planned length: a quiet change of colour, no prompt
-            if big || mine { k.ground = T.dangerSoft }
+            if big || mine { k.ground = .dangerSoft }
             k.ink = T.danger
         }
         // (a Full Mode row already shows its length beside its effort)
@@ -537,14 +542,13 @@ struct AddPill: View {
             if !preview.isEmpty {
                 Text(preview).font(m.font(11)).foregroundColor(T.text).lineLimit(1).fixedSize()
                     .padding(.horizontal, 7).padding(.top, 2).padding(.bottom, 3)
-                    .background(Capsule().fill(T.soft))
+                    .plate(.soft)
                     .padding(.leading, 8).padding(.trailing, m.sp(7, 5))
             }
         }
         .frame(height: m.sp(40, 32))
-        .background(Capsule().fill(T.field))
         .overlay(Capsule().strokeBorder(focused ? T.strong : Color.clear, lineWidth: 1.5))
-        .overlay(Rim(radius: 20))
+        .plate(.field, rim: 20)
         .onAppear { if model.addOpen && !model.full && !model.demoRun { focused = true } }
         .onChange(of: model.focusInput) { _ in focused = true }
     }
@@ -589,7 +593,7 @@ struct HabitChip: View {
             .font(m.font(11)).foregroundColor(T.text).lineLimit(1).truncationMode(.tail)
             .frame(width: w, alignment: .leading)
             .padding(.horizontal, 9).padding(.top, 2).padding(.bottom, 3)
-            .background(Capsule().fill(hot ? T.lift : T.field))
+            .plate(hot ? .lift : .field)
             .contentShape(Capsule())
             .onHover { hot = $0 }
             .onTapGesture { model.addHabit(h) }
@@ -642,8 +646,7 @@ struct FeedbackView: View {
         }
         .padding(.leading, m.padX).padding(.trailing, m.padX - 2)
         .padding(.top, m.padY - 1).padding(.bottom, m.padY)
-        .background(RoundedRectangle(cornerRadius: m.radius, style: .continuous).fill(T.tray))
-        .overlay(Rim(radius: m.radius))
+        .plate(.tray, radius: m.radius, rim: m.radius)
     }
 }
 
@@ -658,7 +661,7 @@ struct ScoreCell: View {
             .foregroundColor(T.text)
             .frame(maxWidth: .infinity)
             .frame(height: m.sp(34, 28))
-            .background(RoundedRectangle(cornerRadius: m.sp(11, 9), style: .continuous).fill(hot ? T.accent : T.lift))
+            .plate(hot ? .accent : .lift, radius: m.sp(11, 9))
             .contentShape(Rectangle())
             .onHover { hot = $0 }
             .onTapGesture { model.answerFeedback(String(n)) }
@@ -673,7 +676,7 @@ struct AlertView: View {
     var body: some View {
         if let t = model.alertTask {
             VStack(alignment: .leading, spacing: 0) {
-                Caps(text: model.alertKind == 1 ? "Time's up" : "Ready for the next one?", color: T.accent).padding(.bottom, 4)
+                Caps(text: model.alertKind == 1 ? "Time's up" : "Ready for the next one?", color: T.accentOn).padding(.bottom, 4)
                 Text(t.title).font(m.head(15)).foregroundColor(T.onStrong).fixedSize(horizontal: false, vertical: true)
                     .padding(.trailing, 4).padding(.bottom, m.sp(11, 9))
                 FlowRow(items: buttons(t), hs: m.slim ? 3 : 5, vs: 5)
@@ -681,7 +684,7 @@ struct AlertView: View {
             .padding(.leading, m.padX + 2).padding(.trailing, m.padX)
             .padding(.top, m.padY + 2).padding(.bottom, m.padY + 2 - m.sp(6, 5))
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: m.radius, style: .continuous).fill(T.strong))
+            .plate(.strong, radius: m.radius)
         }
     }
 

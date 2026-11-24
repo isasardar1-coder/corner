@@ -546,6 +546,7 @@ final class PanelController: NSObject, NSMenuDelegate {
         var mode = modeIn
         model.demoRun = true
         FitScrollFlag.plain = true
+        if let v = ProcessInfo.processInfo.environment["CORNER_SKIN"], let i = Int(v) { T.use(i) } // any mode in a skin (0 to 4)
         if mode.hasPrefix("onboard") {
             let step = Int(String(mode.dropFirst(7))) ?? 0
             showOnboarding(step: step)
@@ -579,7 +580,7 @@ final class PanelController: NSObject, NSMenuDelegate {
         if mode.hasPrefix("full") { mode = String(mode.dropFirst(4)); if mode.isEmpty { mode = "tasks" } }
         let rest = mode.hasPrefix("rest")
         if rest && mode.count > 4 { mode = String(mode.dropFirst(4)) }
-        if mode == "glass" { T.use(1); mode = "tasks" }
+        if let i = ["glass": 1, "metal": 2, "ceramic": 3, "paper": 4][mode] { T.use(i); mode = "tasks" }
         demoSeed(mode)
         if full { enterFull() } else { showPanel(peekMs: 600000) }
         if !rest { model.reveal() }

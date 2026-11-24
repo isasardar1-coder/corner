@@ -47,8 +47,7 @@ struct TaskListCard: View {
         .padding(.horizontal, m.padX - rowOver)
         .padding(.vertical, m.sp(8, 6))
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: m.radius, style: .continuous).fill(T.field))
-        .overlay(Rim(radius: m.radius))
+        .plate(.field, radius: m.radius, rim: m.radius)
     }
 
     func h(_ t: TaskItem) -> CGFloat { return heights[t.id] ?? 30 }
@@ -126,7 +125,7 @@ struct DoneHeader: View {
         }
         .padding(.horizontal, rowOver + 2)
         .frame(height: m.sp(32, 28))
-        .background(RoundedRectangle(cornerRadius: m.sp(12, 10), style: .continuous).fill(T.soft))
+        .plate(.soft, radius: m.sp(12, 10))
         .contentShape(Rectangle())
         .onTapGesture { model.toggleDoneOpen() }
         .padding(.top, m.sp(6, 4))
@@ -276,7 +275,7 @@ struct DueChip: View {
                 let txt = Text(label).font(overdue ? Fonts.lean(m.z(11.5)) : m.font(11.5)).foregroundColor(b)
                 if overdue || today {
                     txt.padding(.horizontal, 8).padding(.top, 2).padding(.bottom, 3)
-                        .background(Capsule().fill(overdue ? T.dangerSoft : T.soft))
+                        .plate(overdue ? .dangerSoft : .soft)
                 } else {
                     txt.padding(.trailing, 2)
                 }
@@ -349,7 +348,7 @@ struct WhenStrip: View {
                       onEscape: { model.toggleWhen(t) })
                 .frame(width: 76)
                 .padding(.horizontal, 8).padding(.top, 3).padding(.bottom, 4)
-                .background(Capsule().fill(T.field))
+                .plate(.field)
                 .overlay(Capsule().stroke(T.ctl, lineWidth: 1))
                 .any(),
         ]
@@ -371,7 +370,7 @@ struct Pill: View {
         Text(text).font(m.font(11.5)).foregroundColor(T.text)
             .padding(.leading, m.sp(11, 9)).padding(.trailing, m.sp(10, 8))
             .padding(.top, m.sp(4, 3)).padding(.bottom, m.sp(5, 4))
-            .background(Capsule().fill(hot ? T.ctl : T.raised))
+            .plate(hot ? .ctl : .raised)
             .contentShape(Capsule())
             .onHover { hot = $0 }
             .onTapGesture { action() }
