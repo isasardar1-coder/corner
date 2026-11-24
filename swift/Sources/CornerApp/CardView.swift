@@ -397,6 +397,7 @@ struct FocusLine: View {
                 .foregroundColor(T.text)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(minHeight: first, alignment: .topLeading)
+                .offset(y: m.sp(2, 1.5)) // (Gilroy stands high in its line: this puts it level with the circle and the pill)
                 .layoutPriority(1)
                 .help(AppModel.infoText(t))
             Spacer(minLength: 0)
