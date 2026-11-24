@@ -4,7 +4,8 @@
 // the accent), and is drawn accordingly: a shadow under it, then its fill, then its grain, bevel and gloss over that.
 // As on Windows nothing here is blurred: a soft shadow is a few faint shapes one over the other, an edge is a
 // stroke with a gradient along it, and the grains are small tiled pictures. Port of Material.cs.
-// Also here: Plate, the one place every box of every skin is drawn (as RimBorder is on Windows, Glass.cs).
+// Also here: Plate, the one place every box of every skin is drawn (as RimBorder is on Windows, Glass.cs). A box
+// of the Glass skin is drawn by Glass.box (Glass.swift).
 import AppKit
 import SwiftUI
 
@@ -433,10 +434,14 @@ struct PlateGround: View {
     let radius: CGFloat? // nil: a pill
     let disc: Bool       // a pill as wide as it is high: drawn as the circle it was before there were made skins
     let skin: Int
+    var dark: Bool = false // Glass: dark glass
 
     var body: some View {
         ZStack {
-            if let r = radius {
+            if skin == 1 {
+                // Glass: a thin layer of white with a glow and a bright rim; a pill is glossy across its upper half
+                if tone != .clear { GlassPlate(tone: tone, radius: radius, dark: dark) }
+            } else if let r = radius {
                 RoundedRectangle(cornerRadius: r, style: skin >= 2 ? .circular : .continuous).fill(tone.color)
             } else if disc {
                 Circle().fill(tone.color)
@@ -450,19 +455,21 @@ struct PlateGround: View {
     }
 }
 
-/// The one place a box is drawn, in every skin. Sage: its colour. Glass: its colour, and where `rim` is given the
-/// hairline round it. Metal, Ceramic, Paper: its shadow, colour, grain, bevel and gloss, by what its tone says it is.
+/// The one place a box is drawn, in every skin. Sage: its colour. Glass: its colour, its glow, its bright rim and a
+/// pill's gloss (Glass.swift). Metal, Ceramic, Paper: its shadow, colour, grain, bevel and gloss, by what its tone
+/// says it is.
 struct Plate: ViewModifier {
     let tone: Tone
     let radius: CGFloat? // nil: a pill
-    let rim: CGFloat?    // Glass: the radius of the hairline round it; nil: none
+    let rim: CGFloat?    // Glass: for a box with no fill of its own (.clear), the radius of the glow and rim over it
     let disc: Bool
     let skin: Int        // (kept, so that a change of skin draws the box again)
+    let dark: Bool       // (and a change from light glass to dark)
 
     func body(content: Content) -> some View {
         content
-            .background(PlateGround(tone: tone, radius: radius, disc: disc, skin: skin))
-            .overlay(Rim(radius: rim ?? 0, on: rim != nil && skin == 1))
+            .background(PlateGround(tone: tone, radius: radius, disc: disc, skin: skin, dark: dark))
+            .overlay(GlassEdge(radius: rim ?? 0, on: skin == 1 && tone == .clear && rim != nil, dark: dark))
     }
 }
 
@@ -470,6 +477,6 @@ extension View {
     /// Puts the view in a box filled with `tone`: a pill (a round one with `disc`), or with `radius` a box with
     /// round corners.
     func plate(_ tone: Tone, radius: CGFloat? = nil, rim: CGFloat? = nil, disc: Bool = false) -> some View {
-        return modifier(Plate(tone: tone, radius: radius, rim: rim, disc: disc, skin: T.skin))
+        return modifier(Plate(tone: tone, radius: radius, rim: rim, disc: disc, skin: T.skin, dark: T.dark))
     }
 }

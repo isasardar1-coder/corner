@@ -458,6 +458,7 @@ final class GenieStage {
     static func raw(_ view: NSView) -> CGImage? {
         let b: NSRect = view.bounds
         if b.width < 1 || b.height < 1 { return nil }
+        GlassLive.hold(true); defer { GlassLive.hold(false) } // Glass: a flat fill stands in for the live blur (Glass.swift)
         if let rep = view.bitmapImageRepForCachingDisplay(in: b) {
             if let d = rep.bitmapData { memset(d, 0, rep.bytesPerRow * rep.pixelsHigh) } // (clear first: most of it is see-through)
             view.cacheDisplay(in: b, to: rep)

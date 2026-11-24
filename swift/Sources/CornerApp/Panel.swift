@@ -346,6 +346,7 @@ final class PanelController: NSObject, NSMenuDelegate {
     }
 
     func skinChanged() {
+        adaptGlass(window.frame) // Glass chosen while the panel is up: light or dark (Glass.swift)
         hosting.needsDisplay = true
     }
 
@@ -375,6 +376,7 @@ final class PanelController: NSObject, NSMenuDelegate {
         model.changed()
         hosting.layoutSubtreeIfNeeded()
         let target = targetFrame()
+        adaptGlass(target) // Glass: light or dark, settled as the panel opens (Glass.swift)
         let launching = fx.launchZoom
         fx.launchZoom = false
         // the corner panel comes out of its corner as one picture; out of the app icon when Corner starts (Genie.swift)
