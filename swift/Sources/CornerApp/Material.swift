@@ -48,26 +48,30 @@ struct NetRandom {
     }
 }
 
-/// A box being drawn: where it is in the drawing, its corner radius, and the kind of corner (a pill's ends are
-/// arcs of a circle; a card's corners are the smoother ones the rest of the app uses).
+/// The outline of a box with round corners in the skin in use. The made skins draw arcs of a circle, as Windows
+/// does, so that the rings of an edge lie evenly inside one another; Sage and Glass keep their smoother corners.
+func boxShape(_ radius: CGFloat) -> RoundedRectangle {
+    return RoundedRectangle(cornerRadius: radius, style: T.made ? .circular : .continuous)
+}
+
+/// A box being drawn: where it is in the drawing and its corner radius. Its corners are arcs of a circle.
 struct MatBox {
     let rect: CGRect
     let r: CGFloat
-    let style: RoundedCornerStyle
 
     /// The box's outline, `inset` further in.
     func path(_ inset: CGFloat = 0) -> Path {
         let q: CGRect = rect.insetBy(dx: inset, dy: inset)
         let half: CGFloat = min(q.width, q.height) / 2
         let rr: CGFloat = max(0, min(r - inset, half))
-        return Path(roundedRect: q, cornerRadius: rr, style: style)
+        return Path(roundedRect: q, cornerRadius: rr, style: .circular)
     }
 
     /// The outline of the shadow it casts: `out` larger all round and `down` lower.
     func cast(_ down: CGFloat, _ out: CGFloat) -> Path {
         let q: CGRect = rect.insetBy(dx: -out, dy: -out).offsetBy(dx: 0, dy: down)
         let half: CGFloat = min(q.width, q.height) / 2
-        return Path(roundedRect: q, cornerRadius: min(r + out, half), style: style)
+        return Path(roundedRect: q, cornerRadius: min(r + out, half), style: .circular)
     }
 }
 
@@ -91,8 +95,8 @@ enum Mat {
 
     static func box(_ rect: CGRect, _ radius: CGFloat?) -> MatBox {
         let half: CGFloat = min(rect.width, rect.height) / 2
-        if let r = radius { return MatBox(rect: rect, r: min(r, half), style: .continuous) }
-        return MatBox(rect: rect, r: half, style: .circular)
+        if let r = radius { return MatBox(rect: rect, r: min(r, half)) }
+        return MatBox(rect: rect, r: half) // a pill
     }
 
     // ------------------------------------------------------------ the grains
@@ -433,7 +437,7 @@ struct PlateGround: View {
     var body: some View {
         ZStack {
             if let r = radius {
-                RoundedRectangle(cornerRadius: r, style: .continuous).fill(tone.color)
+                RoundedRectangle(cornerRadius: r, style: skin >= 2 ? .circular : .continuous).fill(tone.color)
             } else if disc {
                 Circle().fill(tone.color)
             } else {

@@ -500,7 +500,7 @@ struct Stat: View {
         .padding(.leading, m.padX - 3.5).padding(.trailing, m.padX - 5.5)
         .padding(.top, m.padY - 3.5).padding(.bottom, m.padY - 5.5)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(RoundedRectangle(cornerRadius: m.sp(18, 16), style: .continuous).stroke(outlined ? T.strong : Color.clear, lineWidth: 1.5))
+        .overlay(boxShape(m.sp(18, 16)).stroke(outlined ? T.strong : Color.clear, lineWidth: 1.5))
         .plate(.field, radius: m.sp(18, 16), rim: m.sp(18, 16))
         .contentShape(Rectangle())
         .onTapGesture { action?() }
@@ -749,7 +749,7 @@ struct PlanTicket: View {
         // Sage and Glass: the card's ground is cut to shape together with the strip, as it always was. A made skin:
         // the ground is a box of its own behind the strip, with its shadow and bevel
         .background(T.made ? Color.clear : T.field)
-        .clipShape(RoundedRectangle(cornerRadius: r, style: .continuous))
+        .clipShape(boxShape(r))
         .plate(T.made ? .field : .clear, radius: r, rim: r)
     }
 

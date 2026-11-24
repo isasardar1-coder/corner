@@ -50,7 +50,7 @@ struct PanelBackground: View {
     let radius: CGFloat
     var skin: Int = T.skin // (kept, so that a change of skin draws it again)
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: radius, style: skin >= 2 ? .circular : .continuous)
         ZStack(alignment: .top) {
             if skin == 1 {
                 Frost().clipShape(shape)

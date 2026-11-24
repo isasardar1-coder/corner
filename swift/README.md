@@ -70,4 +70,6 @@ proposed order), `habits` (the chips under the add box), `planning` (Full Mode s
 that skin, and `fullglass`, `fullmetal`, `fullceramic`, `fullpaper` the same in Full Mode. Any other mode is rendered
 in a skin with `CORNER_SKIN=0` to `4` (Sage, Glass, Metal, Ceramic, Paper), which is read in a test render only; in
 `package.sh` that is written `settings@2` in `DEMO_MODES`, and the picture is `demo-settings-skin2.png`.
+`CORNER_SKIN_TO` then changes the skin while the panel is on screen, as its pill in Settings does (`settings@0:2`,
+`demo-settings-skin0to2.png`): the picture should be the same as the one that started in that skin.
 A test render never pauses a task for being idle.

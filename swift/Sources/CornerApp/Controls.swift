@@ -634,6 +634,7 @@ enum FitScrollFlag { static var plain = false }
 /// the new colours; the scroll view itself stays, and with it how far it is scrolled.
 struct FitScroll<Content: View>: View {
     let maxHeight: CGFloat
+    var skin: Int = T.skin // (kept: a FitScroll that is otherwise the same as before is not looked at again)
     @ViewBuilder let content: () -> Content
     @State private var h: CGFloat = 0
 
@@ -641,13 +642,13 @@ struct FitScroll<Content: View>: View {
         // A made skin: the last box casts a shadow below itself (Material.swift), which needs room inside what is
         // cut off. When everything fits, the view reaches that much further down, into the margin under it; when
         // it scrolls, the room is at the end of what scrolls.
-        let room: CGFloat = T.made ? 8 : 0
+        let room: CGFloat = skin >= 2 ? 8 : 0
         let over: CGFloat = h <= maxHeight ? room : 0
         Group {
             if FitScrollFlag.plain {
                 VStack(spacing: 0) {
                     content()
-                        .id(T.skin)
+                        .id(skin)
                         .fixedSize(horizontal: false, vertical: true)
                         .background(GeometryReader { g in Color.clear.preference(key: FitHeightKey.self, value: g.size.height) })
                     Spacer(minLength: 0)
@@ -659,7 +660,7 @@ struct FitScroll<Content: View>: View {
             } else {
                 ScrollView(.vertical, showsIndicators: false) {
                     content()
-                        .id(T.skin)
+                        .id(skin)
                         .background(GeometryReader { g in Color.clear.preference(key: FitHeightKey.self, value: g.size.height) })
                         .padding(.bottom, room)
                 }
