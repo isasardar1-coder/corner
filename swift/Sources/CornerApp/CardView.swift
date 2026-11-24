@@ -1,6 +1,7 @@
 // Corner for macOS - the card: its header, and what sits under it in the corner panel and in Full Mode; the trays
 // above the list (the 1-10 check-in, the time's-up prompt, the next task) and the row of chips. Port of Build and
-// UpdateHeader (Corner.cs), FocusLayout, DrawFocus and DrawActions (Focus.cs), ShowFeedback (Ui.cs).
+// UpdateHeader (Corner.cs), FocusLayout, DrawFocus and DrawActions (Focus.cs), ArrangeFull and FitStack
+// (FullLayout.cs), ShowFeedback (Ui.cs).
 import AppKit
 import SwiftUI
 import CornerCore
@@ -93,6 +94,8 @@ struct HeaderView: View {
         let open = model.openCount
         let all = model.data.tasks.count
         let count = open > 0 ? String(open) + " open" : (all > 0 ? "all done" : "")
+        // Full Mode: back, the day and date, then the ring, the gear and Close. The corner panel: the ring, Full Mode
+        // and Close alone (settings are opened from Full Mode).
         HStack(alignment: .center, spacing: 0) {
             if model.full {
                 HeadIcon(d: Icons.back, th: 1.5, size: 10, tip: "Back to the corner", cell: cell) { model.shell?.exitFull() }
@@ -102,19 +105,13 @@ struct HeaderView: View {
                     Text(HeaderView.fmt("MMMM d", now) + (count.isEmpty ? "" : "  ·  " + count))
                         .font(m.font(12)).foregroundColor(T.muted).lineLimit(1)
                 }
-            } else {
-                HStack(alignment: .firstTextBaseline, spacing: 0) {
-                    Text(HeaderView.fmt("EEE d MMM", now)).font(m.font(13, true)).foregroundColor(T.text)
-                    if !count.isEmpty { Text("   " + count).font(m.font(11)).foregroundColor(T.muted) }
-                }
-                .lineLimit(1)
-                .padding(.leading, m.padX)
             }
             Spacer(minLength: 8)
             HStack(spacing: m.sp(6, 4)) {
                 RingDisc(cell: cell)
-                HeadIcon(d: Icons.gear, th: 1.2, size: 12, tip: "Settings", cell: cell) { model.toggleSettings() }
-                if !model.full {
+                if model.full {
+                    HeadIcon(d: Icons.gear, th: 1.2, size: 12, tip: "Settings", cell: cell) { model.toggleSettings() }
+                } else {
                     HeadIcon(d: Icons.full, th: 1.3, size: 10, tip: "Full Mode", cell: cell) { model.shell?.enterFull() }
                 }
                 HeadIcon(d: Icons.cross, th: 1.4, size: 10, tip: "Close", cell: cell) { model.closeButton() }
@@ -188,8 +185,10 @@ struct CornerBody: View {
     let alone: Bool
 
     var body: some View {
-        // The energy view slides down under the chips while the tasks side folds away, and back (Genie.swift):
-        // `open` is 0 on the tasks side, 1 on the energy side, and between the two only while it slides.
+        // At rest it is the next task alone (with a time's-up prompt over it, if one waits); the pointer brings in
+        // the header, the check-ins and the chips. The chart slides down under the chips while the add box and the
+        // list fold away, and back (Genie.swift): `open` is 0 on the tasks side, 1 on the energy side, and between
+        // the two only while it slides.
         let open: CGFloat = model.energyOpen
         let tasksView = open < 1
         let rest = model.isBare
@@ -204,11 +203,11 @@ struct CornerBody: View {
                 if model.checkInOpen && !rest && !prompt { CheckInView().modifier(model.grow(.hover)) }
                 if model.feedbackOpen { FeedbackView().modifier(model.grow(.hover)) }
                 if model.alertTask != nil { AlertView().padding(.bottom, m.gapY) }
-                if tasksView && !prompt { FocusView().modifier(model.grow(.focus)) }
+                if !prompt { FocusView().modifier(model.grow(.focus)) } // (it stays while the chart is open under the chips)
                 if !rest && !prompt { ActionRow().modifier(model.grow(.hover)) }
                 if tasksView && model.addOpen && !rest && !prompt { AddBox().modifier(model.grow(.tasks)) }
                 if tasksView && model.allOpen && !rest && !prompt { TaskListCard().modifier(model.grow(.tasks)) }
-                if open > 0 && !prompt { EnergyView().modifier(model.grow(.energy)) }
+                if open > 0 && !rest && !prompt { EnergyView().modifier(model.grow(.energy)) } // the chart alone
             }
             .padding(.bottom, -m.gapY)
             .padding(.leading, m.side)
@@ -219,42 +218,98 @@ struct CornerBody: View {
     }
 }
 
-// ---------------------------------------------------------------- Full Mode: tasks on the left, energy on the right
+// ---------------------------------------------------------------- Full Mode: two equal columns
 
+/// The tasks column and the energy column, side by side ("Full Mode sides" in Settings swaps them).
 struct FullBody: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.m) var m
     let maxHeight: CGFloat
 
     var body: some View {
+        let swapped: Bool = model.swapped
         HStack(alignment: .top, spacing: 0) {
-            FitScroll(maxHeight: maxHeight - m.side) {
-                VStack(alignment: .leading, spacing: m.gapY) {
-                    if model.checkInOpen { CheckInView() }
-                    if model.feedbackOpen { FeedbackView() }
-                    if model.alertTask != nil { AlertView() }
-                    FocusView()
-                    AddBox()
-                    TaskListCard()
-                }
-                .padding(.leading, m.side)
-                .padding(.trailing, m.sideMid)
+            if swapped {
+                FullEnergy(maxHeight: maxHeight, swapped: true)
+                FullTasks(maxHeight: maxHeight, swapped: true)
+            } else {
+                FullTasks(maxHeight: maxHeight, swapped: false)
+                FullEnergy(maxHeight: maxHeight, swapped: false)
             }
-            .padding(.bottom, m.side)
-            .frame(width: fullW / 2)
-            FitScroll(maxHeight: maxHeight - m.side) {
-                EnergyView()
-                    .padding(.leading, m.sideMid)
-                    .padding(.trailing, m.side)
-            }
-            .padding(.bottom, m.side)
-            .frame(width: fullW / 2)
         }
+    }
+}
+
+struct UsedHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value += nextValue() }
+}
+
+/// The tasks column: the prompts, the open tasks, the add box, then the plan. The list takes the room the others
+/// leave and scrolls inside its card when it needs more; the plan may take up to half (FitStack in FullLayout.cs).
+struct FullTasks: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.m) var m
+    let maxHeight: CGFloat
+    let swapped: Bool
+    @State private var used: CGFloat = 0
+
+    var body: some View {
+        let gap: CGFloat = m.gapY
+        let avail: CGFloat = maxHeight - m.side
+        let planMax: CGFloat = max(120, avail * 0.5)
+        let cardPad: CGFloat = 2 * m.sp(8, 6)
+        let listMax: CGFloat = max(60, avail - used - cardPad)
+        let over: CGFloat = 8 // room inside the plan's scrolling part for its card's shadow (a made skin)
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
+                if model.checkInOpen { CheckInView().padding(.bottom, gap) }
+                if model.feedbackOpen { FeedbackView().padding(.bottom, gap) }
+                if model.alertTask != nil { AlertView().padding(.bottom, gap) }
+            }
+            .background(GeometryReader { g in Color.clear.preference(key: UsedHeightKey.self, value: g.size.height) })
+            TaskListCard(scrollMax: listMax)
+            VStack(alignment: .leading, spacing: 0) {
+                AddBox().padding(.top, gap)
+                FitScroll(maxHeight: planMax) {
+                    PlanCard().padding(.top, gap).padding(.horizontal, over)
+                }
+                .padding(.horizontal, -over)
+            }
+            .background(GeometryReader { g in Color.clear.preference(key: UsedHeightKey.self, value: g.size.height) })
+        }
+        .onPreferenceChange(UsedHeightKey.self) { v in if abs(v - used) > 0.5 { used = v } }
+        .padding(.leading, swapped ? m.sideMid : m.side)
+        .padding(.trailing, swapped ? m.side : m.sideMid)
+        .padding(.bottom, m.side)
+        .frame(width: fullW / 2, alignment: .top)
+    }
+}
+
+/// The energy column: the next task with its timer, the chart, slept / debt / need, nap and rate, routines, then
+/// the done tasks (EnergyView.swift). It scrolls as one.
+struct FullEnergy: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.m) var m
+    let maxHeight: CGFloat
+    let swapped: Bool
+
+    var body: some View {
+        FitScroll(maxHeight: maxHeight - m.side) {
+            EnergyView()
+                .padding(.leading, swapped ? m.side : m.sideMid)
+                .padding(.trailing, swapped ? m.sideMid : m.side)
+        }
+        .padding(.bottom, m.side)
+        .frame(width: fullW / 2, alignment: .top)
     }
 }
 
 // ---------------------------------------------------------------- the next task
 
+/// The next task, one line in both modes: its circle, the task, large, and its timer as a pill at the end.
+/// A small line above it says "Now" or "Paused" while it is being timed (with "Reset" at its far end), and by
+/// priority why this one is next. At rest (the corner panel before the pointer comes) it is the one line alone.
 struct FocusView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.m) var m
@@ -263,19 +318,18 @@ struct FocusView: View {
         let up = model.upcoming()
         CardBox(surface: .tray) {
             if let t = up.first {
-                FocusTop(t: t)
-                FocusTitle(t: t)
-                HStack(spacing: 6) {
-                    TimerPill(t: t, big: true)
-                    if up.count > 1 { ThenChip(n: up[1]) }
-                    Spacer(minLength: 0)
-                }
-                .padding(.top, m.sp(11, 9))
+                if hasTop(t) { FocusTop(t: t) }
+                FocusLine(t: t)
             } else {
                 Text(model.data.tasks.isEmpty ? "Nothing here yet." : "All done. Enjoy it.")
                     .font(m.font(13)).foregroundColor(T.faint)
             }
         }
+    }
+
+    func hasTop(_ t: TaskItem) -> Bool {
+        if model.isBare { return false }
+        return model.timerId == t.id || model.nextReason(t) != nil
     }
 }
 
@@ -288,19 +342,15 @@ struct FocusTop: View {
     var body: some View {
         let prio = AppModel.priorityMode
         let timed = model.timerId == t.id
-        // by priority nothing is "overdue", and a time an old schedule gave the task is not shown
-        let late = t.overdue && !timed && !prio
         let state: String = stateText(timed)
-        let when: String? = whenText(late, prio)
         return HStack(alignment: .center, spacing: 8) {
             Caps(text: state, color: timed && model.timerRunning ? T.text : nil)
-            if let w = when {
-                Text(w).font(late ? Fonts.lean(m.z(11)) : m.font(11)).foregroundColor(late ? T.danger : T.muted)
-            }
             Spacer(minLength: 0)
             if timed && !prio {
                 // a timer that has been started can be put back to the task's full length
                 Text("Reset").font(m.font(11)).foregroundColor(resetHot ? T.text : T.muted)
+                    .padding(.leading, 10)
+                    .contentShape(Rectangle())
                     .onHover { resetHot = $0 }
                     .onTapGesture { model.resetTimer() }
                     .help("Put the timer back to " + String(AppModel.durationMin(t)) + " min")
@@ -309,37 +359,35 @@ struct FocusTop: View {
         .padding(.bottom, m.sp(9, 7))
     }
 
-    /// "Now" or "Paused" while it is being timed; else "Next", by priority with why this one is next.
+    /// "Now" or "Paused" while it is being timed; else, by priority, "Next" with why this one is next.
     func stateText(_ timed: Bool) -> String {
         if timed { return model.timerRunning ? "Now" : "Paused" }
         if let reason = model.nextReason(t) { return "Next · " + reason }
         return "Next"
     }
-
-    func whenText(_ late: Bool, _ prio: Bool) -> String? {
-        if prio && t.planned { return nil }
-        guard t.hasTime, let d = t.dueAt else { return nil }
-        return (late ? "overdue " : "") + EnergyDay.clock(d)
-    }
 }
 
-struct FocusTitle: View {
+/// The circle, the task and, at the end of its own line, the timer. The circle and the pill are centred on the
+/// title's first line.
+struct FocusLine: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.m) var m
     let t: TaskItem
     @State private var hot = false
 
     var body: some View {
-        let ck = m.sp(22, 20)
-        let size = m.z(m.sp(22, 18))
-        let worked = model.workedOn(t)
+        let ck: CGFloat = m.sp(22, 20)
+        let size: CGFloat = m.z(m.sp(22, 18))
+        let first: CGFloat = max(size * 1.2, ck).rounded(.up)
+        let pillH: CGFloat = m.sp(34, 30)
+        let worked: Bool = model.workedOn(t)
         HStack(alignment: .top, spacing: 0) {
             Circle()
                 .stroke(T.text, lineWidth: 1.5)
                 .background(Circle().fill(hot ? T.soft : Color.clear))
                 .overlay(tick(worked, ck))
                 .frame(width: ck, height: ck)
-                .frame(width: ck + m.sp(11, 9), height: max(size * 1.2, ck), alignment: .leading)
+                .frame(width: ck + m.sp(11, 9), height: first, alignment: .leading)
                 .contentShape(Rectangle())
                 .onHover { hot = $0 }
                 .onTapGesture { model.completeTask(t) }
@@ -348,8 +396,14 @@ struct FocusTitle: View {
                 .font(Fonts.ui(size, true))
                 .foregroundColor(T.text)
                 .fixedSize(horizontal: false, vertical: true)
+                .frame(minHeight: first, alignment: .topLeading)
+                .layoutPriority(1)
                 .help(AppModel.infoText(t))
             Spacer(minLength: 0)
+            TimerPill(t: t, big: true)
+                .fixedSize()
+                .padding(.leading, 10)
+                .padding(.top, (first - pillH) / 2)
         }
     }
 
@@ -359,22 +413,6 @@ struct FocusTitle: View {
             .scaleEffect(ck / 18)
             .opacity(worked ? 1 : 0)
             .allowsHitTesting(false)
-    }
-}
-
-struct ThenChip: View {
-    @Environment(\.m) var m
-    let n: TaskItem
-    var body: some View {
-        var text = "then " + n.title
-        let hidden: Bool = AppModel.priorityMode && n.planned // by priority a time an old schedule gave is not shown
-        if !hidden, n.hasTime, let d = n.dueAt, d.dateOnly <= Date().dateOnly { text += ", " + EnergyDay.clock(d) }
-        return Text(text)
-            .font(m.font(11.5)).foregroundColor(T.muted).lineLimit(1).truncationMode(.tail)
-            .padding(.horizontal, m.sp(14, 12))
-            .frame(height: m.sp(34, 30))
-            .plate(.field, rim: 15)
-            .help("Then: " + n.title + "\n" + AppModel.infoText(n))
     }
 }
 
@@ -473,18 +511,25 @@ struct ActionRow: View {
         let ink: Color = listOn ? T.onStrong : T.text
         HStack(spacing: 6) {
             Chip(on: listOn, action: {
-                if !tasks { model.setTab(0); return }
+                if !tasks {
+                    // the list takes the chart's place
+                    model.allOpen = true
+                    Settings.set("AllOpen", 1)
+                    model.setTab(0)
+                    return
+                }
                 model.allOpen.toggle()
                 Settings.set("AllOpen", model.allOpen ? 1 : 0)
                 model.changed()
                 model.shell?.contentChanged()
             }) {
                 HStack(spacing: 0) {
-                    Glyph(d: tasks ? Icons.lines : Icons.left, color: ink, th: 1.5, w: 14, h: 14)
-                    Text(tasks ? "All tasks" : "Tasks").font(m.font(12)).foregroundColor(ink).padding(.leading, 7).padding(.trailing, 6)
-                    if tasks { Text(String(model.openCount)).font(m.font(11)).foregroundColor(listOn ? T.onStrongSoft : T.muted) }
+                    Glyph(d: Icons.lines, color: ink, th: 1.5, w: 14, h: 14)
+                    Text("All tasks").font(m.font(12)).foregroundColor(ink).padding(.leading, 7).padding(.trailing, 6)
+                    Text(String(model.openCount)).font(m.font(11)).foregroundColor(listOn ? T.onStrongSoft : T.muted)
                     Spacer(minLength: 0)
-                    if tasks { Glyph(d: listOn ? Icons.down : Icons.right, color: ink, th: 1.5, w: 14, h: 14) }
+                    // an arrow at the far end: across while the list is closed, down while it is open
+                    Glyph(d: listOn ? Icons.down : Icons.right, color: ink, th: 1.5, w: 14, h: 14)
                 }
                 .padding(.horizontal, 11)
             }
@@ -494,7 +539,7 @@ struct ActionRow: View {
                 model.changed()
                 model.shell?.contentChanged()
             }
-            RoundChip(d: Icons.wave, on: !tasks, tip: "Energy") { model.cycle(to: tasks ? 1 : 0) } // slides (Genie.swift)
+            RoundChip(d: Icons.wave, on: !tasks, tip: "Energy") { model.cycle(to: tasks ? 1 : 0) } // drops down under the chips (Genie.swift)
         }
         .frame(height: 30)
     }

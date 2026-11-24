@@ -46,10 +46,10 @@ The app is not notarised: the first time, right-click Corner.app and choose Open
 | `Genie.swift` | The animations, ported from `Launch.cs`: the panel's picture flying out of its corner and back in as a funnel of thin slices (out of the app icon when Corner starts), the same between the corner panel and Full Mode, drawn in a see-through window that never takes a click; the parts that grow in under the pointer, the energy view sliding down under the chips, the energy % counting up; and the test renders that show them as frames |
 | `Model.swift` | `AppModel`: everything the card shows and does (tasks, timers, prompts, the energy curve, naps, Plan, routines, check-ins, the record), ported from the Windows `Shell` |
 | `WorkModel.swift` | More of `AppModel`, ported from the `Shell` half of `Work.cs` and `EnergyFeel.cs`: Plan by Schedule / Priority and the stopwatch, the work log (`work.csv`), the pause when the Mac sleeps, locks or sits idle, the order by priority, the habit chips, the energy % you can type over |
-| `CardView.swift` | The card: header, the corner panel and Full Mode bodies, the next task and its timer (a countdown, or by priority a stopwatch), the row of chips, the add box with the habit chips under it, the 1-10 check-in, the time's-up box |
-| `TasksView.swift` | The task list: rows (the circle carries a tick on the task being worked on), the quick-date strip, the Done bar, drag to reorder |
-| `EnergyView.swift` | The Energy side: the curve with the energy % (click it to type how you feel), the three sleep figures, the sleep-need hint, the debt calculator, naps, the plan ticket (a schedule with the split-task offer, or an order by priority), routines |
-| `SettingsView.swift` | The morning sleep check-in and the Settings page (planning, panel, energy, your record, sleep history) |
+| `CardView.swift` | The card: the header (the corner panel's is the ring, Full Mode and Close; Full Mode's has the day, the gear and the way back), the corner panel (at rest the next task alone; the pointer brings in the header and the chips) and Full Mode's two equal columns, the next task on one line with its timer (a countdown, or by priority a stopwatch), the row of chips, the add box with the habit chips under it, the 1-10 check-in, the time's-up box |
+| `TasksView.swift` | The task list: rows (the circle carries a tick on the task being worked on), the quick-date strip, the Done bar (corner panel), drag to reorder; in Full Mode it scrolls inside its card, and an applied plan stands beside its tasks as the upright "Today's plan" strip |
+| `EnergyView.swift` | The Energy side: the curve with the energy % (click it to type how you feel), which is all the corner panel shows of it; and Full Mode's energy column: the next task, the curve, three round icons that open Slept, Debt and Need, the sleep-need hint, the debt calculator, naps and "Rate now", a slim Routines bar and a slim Done bar. Also the plan card of the tasks column (a schedule with the split-task offer, or an order by priority) |
+| `SettingsView.swift` | The morning sleep check-in and the Settings page, opened from Full Mode (planning, panel with "Full Mode sides", energy, your record, sleep history) |
 | `Toast.swift` | The energy notices: a card at the panel's corner with `ping.wav` |
 | `Onboard.swift` | The welcome window on the very first start |
 | `Controls.swift` | Shared pieces: glyphs drawn from the Windows path strings, buttons, chips, switches, text boxes, time entry, flow layout |
@@ -63,11 +63,17 @@ position on a Mac is kept under its own keys (`MacMoved`, `MacPosX`, `MacPosY`, 
 `settings.json` copied from Windows does not put it off screen.
 
 Test renders: `CORNER_DATA=/tmp/x Corner.app/Contents/MacOS/Corner --demo out.png <mode>` fills a throwaway list and
-writes the panel to a PNG. Modes include `tasks`, `all`, `adding`, `energy`, `settings`, `checkin`, `feedback`,
-`timeup`, `debt`, `nap`, `rest`, `full`, `fullenergy`, `fullplan`, `fullroutines`, `fullsettings`,
-`priority` (Plan by Priority, a task worked on for 12:34), `paused` (the same, then paused), `order` (Full Mode, a
-proposed order), `habits` (the chips under the add box), `planning` (Full Mode settings, the Planning card),
-`onboard0` to `onboard3` and `rise` / `dip` (the notice). `glass`, `metal`, `ceramic` and `paper` are `tasks` in
+writes the panel to a PNG. The corner panel: `rest` (as it opens: the next task alone), `resttimeup` (the same with a
+time's-up box over it), `tasks` (after the pointer has come onto it: the header and the chips), `all` (the list
+open), `adding` (the add box), `habits` (the add box with the chips of what you usually do), `energy` (the chart
+dropped down under the chips), `timer` (a task being timed: "Now" and "Reset" over it), `timeup`, `checkin`,
+`feedback`, `priority` (Plan by Priority, a task worked on for 12:34) and `paused` (the same, then paused). Full
+Mode: `full`, `fullplan` (a proposed plan), `fullapplied` (an applied plan: the strip beside its tasks), `fullstats`
+(the Slept and Need boxes open), `debt` (the Debt box and its calculator), `nap`, `fullroutines`, `fullswap` (the
+energy column on the left), `order` (by priority, a proposed order), `settings` or `fullsettings`, and `planning`
+(the same by priority). A mode that starts with `full` is that mode in Full Mode, and one that starts with `rest`
+is that mode before the pointer has come. Then `onboard0` to `onboard3` and `rise` / `dip` (the notice). `glass`,
+`metal`, `ceramic` and `paper` are `tasks` in
 that skin, and `fullglass`, `fullmetal`, `fullceramic`, `fullpaper` the same in Full Mode. Any other mode is rendered
 in a skin with `CORNER_SKIN=0` to `4` (Sage, Glass, Metal, Ceramic, Paper), which is read in a test render only; in
 `package.sh` that is written `settings@2` in `DEMO_MODES`, and the picture is `demo-settings-skin2.png`.

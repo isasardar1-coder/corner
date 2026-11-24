@@ -159,6 +159,7 @@ struct PanelSettings: View {
     var body: some View {
         let corners = ["Top right", "Top left", "Bottom right", "Bottom left"]
         let auto = Autostart.enabled
+        let swapped: Bool = model.swapped
         return Group {
             SetCaps(text: "Panel")
             SetCard(lines: [
@@ -173,6 +174,13 @@ struct PanelSettings: View {
                 SettingLine(title: "Hot corner", sub: corners[model.corner] + " opens the list") { CornerPicker() }.any(),
                 SettingLine(title: "Open at login", sub: Autostart.inApp ? nil : "Move Corner.app to Applications first") {
                     Toggle2(on: auto) { Autostart.set(!auto); model.changed() }
+                }.any(),
+                SettingLine(title: "Full Mode sides", sub: swapped ? "Energy on the left, tasks on the right" : "Tasks on the left, energy on the right") {
+                    Segmented(names: ["Tasks left", "Energy left"], chosen: swapped ? 1 : 0) { i in
+                        Settings.set("SwapSides", Double(i))
+                        model.changed()
+                        model.shell?.contentChanged()
+                    }
                 }.any(),
                 SettingLine(title: "Panel position", sub: "Drag the header to move it") {
                     Btn(text: "Reset", kind: 1, on: 1) { model.shell?.resetPosition(); model.changed() }

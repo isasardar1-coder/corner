@@ -1033,8 +1033,8 @@ extension PanelController {
 enum GrowPart {
     case header   // the header: comes in with the pointer
     case hover    // the check-ins and the row of chips: the same
-    case focus    // the next task: folds away while the energy view is open
-    case tasks    // the add box and the list: both of the above
+    case focus    // the next task: it stays, with the space under it
+    case tasks    // the add box and the list: come in with the pointer, and fold away while the energy view is open
     case energy   // the energy view: slides down under the chips, and folds back up
 }
 
@@ -1056,7 +1056,7 @@ extension AppModel {
         switch part {
         case .header: return Grow(k: grown, gap: 0, folding: false)
         case .hover: return Grow(k: grown, gap: gap, folding: false)
-        case .focus: return Grow(k: 1 - open, gap: gap, folding: sliding && !shutting)
+        case .focus: return Grow(k: 1, gap: gap, folding: false)
         case .tasks: return Grow(k: min(grown, 1 - open), gap: gap, folding: sliding && !shutting)
         case .energy: return Grow(k: open, gap: gap, folding: shutting)
         }

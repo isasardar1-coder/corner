@@ -660,7 +660,8 @@ final class PanelController: NSObject, NSMenuDelegate {
         model.data.tasks[3].setDue(Date().dateOnly.addingDays(-1), hasTime: false)
         model.input = "Dentist nov 30 at 2pm"
         if GenieStage.demoModes.contains(mode) { demoMotion(path, mode); return } // an animation, as frames side by side (Genie.swift)
-        let fullOnly = mode == "order" || mode == "planning" // these two are of Full Mode
+        // these are of Full Mode alone: the plan, the sleep figures, naps, routines and Settings are not in the corner panel
+        let fullOnly = ["order", "planning", "settings", "plan", "applied", "stats", "debt", "nap", "routines", "swap"].contains(mode)
         let full = fullOnly || mode.hasPrefix("full") || ProcessInfo.processInfo.environment["CORNER_FULL"] == "1"
         if mode.hasPrefix("full") { mode = String(mode.dropFirst(4)); if mode.isEmpty { mode = "tasks" } }
         let rest = mode.hasPrefix("rest")
@@ -687,10 +688,11 @@ final class PanelController: NSObject, NSMenuDelegate {
 
     func demoSeed(_ mode: String) {
         if mode == "prompt" { model.promptOnly = true }
+        if mode == "swap" { Settings.set("SwapSides", 1) } // Full Mode with the energy column on the left
         let byPriority = mode == "priority" || mode == "paused" || mode == "order" || mode == "planning"
         if byPriority { Settings.set("PlanBy", 1) }
         if mode == "habits" { demoHabits() }
-        if mode == "plan" || mode == "applied" || mode == "priority" || mode == "paused" || mode == "order" {
+        if mode == "plan" || mode == "applied" || mode == "priority" || mode == "paused" || mode == "order" || mode == "swap" {
             for s in ["Tidy desk", "Anki insertion !low 20m", "Review animation !med", "Emails !low", "Write concept 14 !high 45m"] {
                 model.input = s
                 model.addTask()
@@ -721,9 +723,10 @@ final class PanelController: NSObject, NSMenuDelegate {
         case "adding": model.addOpen = true
         case "energy", "split", "nap", "real": model.setTab(1)
         case "plan": model.setTab(1); model.makePlan()
-        case "applied": model.makePlan(); model.applyPlan(); model.setTab(0); model.allOpen = true
+        case "applied", "swap": model.makePlan(); model.applyPlan(); model.setTab(0); model.allOpen = true
         case "routines": model.routinesOpen = true; model.setTab(1)
-        case "debt": model.debtOpen = true; model.setTab(1)
+        case "stats": model.statOpen[0] = true; model.statOpen[2] = true // Slept and Need open, as "statsopen" on Windows
+        case "debt": model.statOpen[1] = true; model.debtOpen = true
         case "settings": model.toggleSettings()
         case "feedback": model.rateNowPressed()
         case "timer":
