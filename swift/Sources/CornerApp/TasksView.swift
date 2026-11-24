@@ -1,6 +1,7 @@
 // Corner for macOS - the task list: its rows (circle, title, delete on hover, effort and date, the timer), the strip
-// of quick dates under a row, the Done bar, and dragging a row to reorder. Port of Rebuild, MakeRow, WhenStrip and
-// the drag code in Corner.cs, RowSide in Focus.cs and EnergyTag in UiEnergy.cs.
+// of quick dates under a row, the Done bar, dragging a row to reorder, and "Today's plan" upright beside the
+// tasks a plan placed. Port of Rebuild, MakeRow, WhenStrip and the drag code in Corner.cs, RowSide in Focus.cs,
+// EnergyTag in UiEnergy.cs and PlacePlanStrip in FullLayout.cs.
 import AppKit
 import SwiftUI
 import CornerCore
@@ -12,18 +13,64 @@ struct RowHeightKey: PreferenceKey {
     }
 }
 
-/// The white card holding every task.
+extension AppModel {
+    /// A task that the plan applied today has placed, and that is still to do (InTodaysPlan in FullLayout.cs).
+    func inTodaysPlan(_ t: TaskItem) -> Bool {
+        if t.done { return false }
+        let today: Date = Date().dateOnly
+        if AppModel.priorityMode {
+            // by priority: the tasks the order covers
+            if !orderToday { return false }
+            guard let d = t.dueAt else { return true }
+            return d.dateOnly <= today
+        }
+        guard t.planned, t.hasTime, let d = t.dueAt else { return false }
+        return d.dateOnly == today
+    }
+}
+
+/// Where the "Today's plan" strip stands beside the rows: from the first task the plan placed to the last.
+struct PlanSpan {
+    let top: CGFloat
+    let height: CGFloat
+}
+
+let planStripW: CGFloat = 18
+
+/// The white card holding every task. In the corner panel the done tasks are under the open ones; Full Mode shows
+/// them in the energy column (DoneCard), and there the rows scroll inside the card when they need more than `scrollMax`.
 struct TaskListCard: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.m) var m
+    var scrollMax: CGFloat? = nil
     @State private var dragId: String? = nil
     @State private var dragDY: CGFloat = 0
     @State private var heights: [String: CGFloat] = [:]
 
     var body: some View {
-        let active = model.data.tasks.filter { !$0.done }
-        let done = model.data.tasks.filter { $0.done }.sorted { ($0.doneAt ?? "") > ($1.doneAt ?? "") }
-        VStack(alignment: .leading, spacing: 0) {
+        let active: [TaskItem] = model.data.tasks.filter { !$0.done }
+        let done: [TaskItem] = model.full ? [] : model.data.tasks.filter { $0.done }.sorted { ($0.doneAt ?? "") > ($1.doneAt ?? "") }
+        let anyDone: Bool = model.data.tasks.contains { $0.done }
+        let hp: CGFloat = m.padX - rowOver
+        Group {
+            if let mx = scrollMax {
+                FitScroll(maxHeight: mx) { rows(active, done, anyDone).padding(.horizontal, hp) }
+            } else {
+                rows(active, done, anyDone).padding(.horizontal, hp)
+            }
+        }
+        .padding(.vertical, m.sp(8, 6))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .plate(.field, radius: m.radius, rim: m.radius)
+    }
+
+    func rows(_ active: [TaskItem], _ done: [TaskItem], _ anyDone: Bool) -> some View {
+        // Full Mode, once a plan has been applied: a lime strip runs down the left of the list beside the tasks it
+        // placed. It stands mostly in the card's own edge, so the rows move over only a little for it.
+        let span: PlanSpan? = model.full ? planSpan(active) : nil
+        let stripX: CGFloat = 4 - (m.padX - rowOver) // 4 in from the card's edge
+        let shift: CGFloat = span == nil ? 0 : max(0, stripX + planStripW + 3 - rowOver) // the circles start 3 after it
+        return VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(active.enumerated()), id: \.element.id) { pair in
                 TaskRow(t: pair.element, dragging: dragId != nil)
                     .background(GeometryReader { g in Color.clear.preference(key: RowHeightKey.self, value: [pair.element.id: g.size.height]) })
@@ -32,7 +79,7 @@ struct TaskListCard: View {
                     .gesture(drag(pair.offset, active))
             }
             if active.isEmpty {
-                Text(done.isEmpty ? "Nothing here yet." : "All done. Enjoy it.")
+                Text(anyDone ? "All done. Enjoy it." : "Nothing here yet.")
                     .font(m.font(12.5)).foregroundColor(T.faint)
                     .padding(.horizontal, rowOver).padding(.vertical, 6)
             }
@@ -43,11 +90,35 @@ struct TaskListCard: View {
                 }
             }
         }
-        .onPreferenceChange(RowHeightKey.self) { heights = $0 }
-        .padding(.horizontal, m.padX - rowOver)
-        .padding(.vertical, m.sp(8, 6))
         .frame(maxWidth: .infinity, alignment: .leading)
-        .plate(.field, radius: m.radius, rim: m.radius)
+        .padding(.leading, shift)
+        .overlay(strip(span, stripX), alignment: .topLeading)
+        .onPreferenceChange(RowHeightKey.self) { heights = $0 }
+    }
+
+    @ViewBuilder func strip(_ span: PlanSpan?, _ x: CGFloat) -> some View {
+        if let s = span, dragId == nil {
+            PlanStripBar(height: s.height).offset(x: x, y: s.top)
+        }
+    }
+
+    /// From the top of the first row the plan placed to the bottom of the last, 2 in at each end.
+    func planSpan(_ active: [TaskItem]) -> PlanSpan? {
+        var y: CGFloat = 0
+        var top: CGFloat = 0
+        var bottom: CGFloat = 0
+        var any: Bool = false
+        for t in active {
+            let rowH: CGFloat = h(t)
+            if model.inTodaysPlan(t) {
+                if !any { top = y }
+                any = true
+                bottom = y + rowH
+            }
+            y += rowH
+        }
+        if !any || bottom - top < 12 { return nil }
+        return PlanSpan(top: top + 2, height: bottom - top - 4)
     }
 
     func h(_ t: TaskItem) -> CGFloat { return heights[t.id] ?? 30 }
@@ -98,6 +169,28 @@ struct TaskListCard: View {
                 model.dragging = false
                 withAnimation(.easeOut(duration: 0.16)) { model.moveTask(from: d, to: to) }
             }
+    }
+}
+
+/// "Today's plan", upright beside the tasks an applied plan placed. Too short for its name, it is a plain bar.
+struct PlanStripBar: View {
+    @Environment(\.m) var m
+    let height: CGFloat
+
+    var body: some View {
+        let name: String = "TODAY'S PLAN"
+        let nameW: CGFloat = Fonts.width(name, m.z(9), true) + 2
+        ZStack {
+            if height >= nameW + 12 {
+                Text(name).font(m.font(9, true)).foregroundColor(T.onAccent).lineLimit(1).fixedSize()
+                    .frame(width: nameW, height: 12)
+                    .rotationEffect(.degrees(-90))
+                    .frame(width: 12, height: nameW)
+            }
+        }
+        .frame(width: planStripW, height: max(1, height))
+        .plate(.accent, radius: 7)
+        .allowsHitTesting(false)
     }
 }
 

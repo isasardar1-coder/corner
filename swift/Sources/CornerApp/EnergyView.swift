@@ -1,7 +1,9 @@
-// Corner for macOS - the Energy side: the curve in its tray (zones, sleep, naps, now, the cursor, scrolling in the
-// corner panel), the three sleep figures, the suggested sleep need, the sleep debt calculator, naps, and in Full
-// Mode the plan ticket and the routines. Port of DrawEnergy, DrawNeedHint, DrawNaps, DrawPlan and DrawRoutines
-// (UiEnergy.cs), AddChart and DrawDebt (UiSleep.cs).
+// Corner for macOS - the Energy side. In the corner panel it is the chart alone, in its tray (zones, sleep, naps,
+// now, the cursor, scrolling). In Full Mode it is a column: the next task, the chart, three round icons that open
+// the sleep figures, the suggested sleep need, the sleep debt calculator, naps and "Rate now", a slim Routines bar
+// and a slim Done bar. The plan card stands in the tasks column (CardView.swift). Port of DrawEnergy, DrawNeedHint,
+// DrawNaps, DrawPlan and DrawRoutines (UiEnergy.cs), AddChart and DrawDebt (UiSleep.cs), DrawOrderPlan (Work.cs),
+// DrawDoneCard and FillDone (FullLayout.cs).
 import AppKit
 import SwiftUI
 import CornerCore
@@ -12,15 +14,18 @@ struct EnergyView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: m.gapY) {
+            if model.full { FocusView() } // the next task and its timer sit above the chart
             if let e = model.energy {
                 CurveTray(e: e)
-                StatsRow(e: e)
-                NeedHintCard(e: e)
-                if model.debtOpen { DebtCard(e: e) }
-                NapsBlock(e: e)
                 if model.full {
-                    PlanTicket(e: e)
+                    // the corner panel stops at the chart; the figures, naps, rating and routines are Full Mode's
+                    StatIcons()
+                    if model.statOpen.contains(true) { StatsRow(e: e) }
+                    NeedHintCard(e: e)
+                    if model.debtOpen && model.statOpen[1] { DebtCard(e: e) }
+                    NapsBlock(e: e)
                     RoutinesCard()
+                    DoneCard()
                 }
             } else {
                 CardBox(surface: .tray) {
@@ -29,7 +34,10 @@ struct EnergyView: View {
                         .padding(.bottom, 10)
                     HStack { Btn(text: "Enter sleep", kind: 0) { model.openCheckIn(edit: false) }; Spacer() }
                 }
-                if model.full { RoutinesCard() }
+                if model.full {
+                    RoutinesCard()
+                    DoneCard()
+                }
             }
         }
     }
@@ -437,6 +445,32 @@ struct HoverX: ViewModifier {
 
 // ---------------------------------------------------------------- slept / debt / need
 
+/// Full Mode: the three figures are round icons until clicked; each opens its own box underneath, and closes it again.
+struct StatIcons: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.m) var m
+
+    var body: some View {
+        let icons: [String] = [Icons.moon, Icons.debt, Icons.bed]
+        let names: [String] = ["Slept", "Debt", "Need"]
+        HStack(alignment: .center, spacing: m.sp(8, 6)) {
+            ForEach(0..<3, id: \.self) { i in
+                // each in the middle of its third
+                RoundChip(d: icons[i], on: model.statOpen[i], tip: names[i]) { toggle(i) }
+                    .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    func toggle(_ i: Int) {
+        model.statOpen[i].toggle()
+        if i == 1 && !model.statOpen[1] { model.debtOpen = false }
+        model.changed()
+        model.shell?.contentChanged()
+    }
+}
+
+/// The boxes of the figures that are open, each under its icon (an empty place keeps the others where they are).
 struct StatsRow: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.m) var m
@@ -452,19 +486,37 @@ struct StatsRow: View {
         if let nt = night, nt.assumed || nt.wokeAt.dateOnly != SleepLog.today(now) { sleptSub += " (assumed)" }
         let sleptShort = sleep.count > 1 ? String(sleep.count) + " periods" : (sleep.first.map { "woke " + EnergyDay.clock($0.to) } ?? "")
         let debt = e.debtHours >= 0.25
+        let open: [Bool] = model.full ? model.statOpen : [true, true, true]
         return HStack(alignment: .top, spacing: m.sp(8, 6)) {
-            Stat(icon: "M11.5,8.5 A5,5 0 0 1 5.5,2.5 A5,5 0 1 0 11.5,8.5 Z", caption: "Slept", value: AppModel.durShort(night?.hours ?? 0),
-                 sub: m.slim ? sleptShort : sleptSub, outlined: false, tip: sleptSub + "  ·  click to correct") { model.openCheckIn(edit: true) }
-            Stat(icon: "M7,2 A5,5 0 1 1 6.99,2 Z M4.5,7 H9.5", caption: "Debt", value: debt ? AppModel.durShort(e.debtHours) : "none",
-                 sub: (m.slim ? "" : "over ") + String(EnergyModel.debtNights) + " nights", outlined: model.debtOpen, tip: "Sleep debt calculator") {
-                model.debtOpen.toggle()
-                model.changed()
-                model.shell?.contentChanged()
+            if open[0] {
+                Stat(icon: Icons.moon, caption: "Slept", value: AppModel.durShort(night?.hours ?? 0),
+                     sub: m.slim ? sleptShort : sleptSub, outlined: false, tip: sleptSub + "  ·  click to correct") { model.openCheckIn(edit: true) }
+            } else {
+                StatGap()
             }
-            Stat(icon: "M1.5,10.5 V4.5 M1.5,8 H12.5 V10.5 M12.5,8 V6.5 A2,2 0 0 0 10.5,4.5 H6 V8", caption: "Need", value: AppModel.durShort(e.need),
-                 sub: nil, outlined: false, tip: model.needHint?.note, steps: true, action: nil)
+            if open[1] {
+                Stat(icon: Icons.debt, caption: "Debt", value: debt ? AppModel.durShort(e.debtHours) : "none",
+                     sub: (m.slim ? "" : "over ") + String(EnergyModel.debtNights) + " nights", outlined: model.debtOpen, tip: "Sleep debt calculator") {
+                    model.debtOpen.toggle()
+                    model.changed()
+                    model.shell?.contentChanged()
+                }
+            } else {
+                StatGap()
+            }
+            if open[2] {
+                Stat(icon: Icons.bed, caption: "Need", value: AppModel.durShort(e.need),
+                     sub: nil, outlined: false, tip: model.needHint?.note, steps: true, action: nil)
+            } else {
+                StatGap()
+            }
         }
     }
+}
+
+/// The place of a figure whose box is closed.
+struct StatGap: View {
+    var body: some View { Color.clear.frame(maxWidth: .infinity).frame(height: 1) }
 }
 
 struct Stat: View {
@@ -719,68 +771,45 @@ struct NapsBlock: View {
     }
 }
 
-// ---------------------------------------------------------------- the plan: a white ticket with a lime strip
+// ---------------------------------------------------------------- the plan: a white card under the add box
 
-struct PlanTicket: View {
+/// The plan is a plain white card: the time it fills and its buttons, then (once there is a proposal) the proposed
+/// tasks and a pale-lime foot with the key to the ticks. An applied plan is named on the task list instead, by the
+/// upright strip beside the tasks it placed (TasksView.swift). With no sleep entered there is no curve to plan on,
+/// and no card.
+struct PlanCard: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.m) var m
-    let e: EnergyDay
 
     var body: some View {
+        if let e = model.energy { card(e) }
+    }
+
+    func card(_ e: EnergyDay) -> some View {
         // "Plan by: Priority" (Settings): what comes after what, with no clock times
         let prio: Bool = AppModel.priorityMode
-        let name: String = PlanTicket.name(prio, model).uppercased()
         let r: CGFloat = m.radius
-        let nameW: CGFloat = Fonts.width(name, m.z(10), true)
+        let proposed: Bool = prio ? model.orderProposal != nil : model.proposal != nil
         let placed: Bool = model.proposal?.contains { $0.placed } ?? false
         let key: Bool = placed && !prio
-        return HStack(alignment: .top, spacing: 0) {
-            PlanStrip(name: name, nameW: nameW)
+        return VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
-                Group {
-                    if prio { OrderPlan() } else { SchedulePlan(e: e) }
-                }
-                .padding(.horizontal, m.padX).padding(.vertical, m.padY)
-                Spacer(minLength: 0)
-                if key { PlanKey() }
+                if proposed { Caps(text: prio ? "Proposed order" : "Proposed plan").padding(.bottom, 6) }
+                if prio { OrderPlan() } else { SchedulePlan(e: e) }
             }
+            .padding(.horizontal, m.padX).padding(.vertical, m.padY)
+            if key { PlanKey() }
         }
-        .frame(minHeight: nameW + 26)
-        // Sage and Glass: the card's ground is cut to shape together with the strip, as it always was. A made skin:
-        // the ground is a box of its own behind the strip, with its shadow and bevel
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // Sage and Glass: the card's ground is cut to shape together with its foot. A made skin: the ground is a
+        // box of its own behind them, with its shadow and bevel
         .background(T.made ? Color.clear : T.field)
         .clipShape(boxShape(r))
         .plate(T.made ? .field : .clear, radius: r, rim: r)
     }
-
-    static func name(_ prio: Bool, _ model: AppModel) -> String {
-        if prio { return model.orderProposal == nil ? "Today's plan" : "Proposed order" }
-        return model.proposal == nil ? "Today's plan" : "Proposed plan"
-    }
 }
 
-/// The ticket's lime strip, its name running up it.
-struct PlanStrip: View {
-    @Environment(\.m) var m
-    let name: String
-    let nameW: CGFloat
-
-    var body: some View {
-        ZStack(alignment: .top) {
-            Color.clear
-            Text(name).font(m.font(10, true)).foregroundColor(T.onAccent).fixedSize()
-                .frame(width: nameW, height: 14)
-                .rotationEffect(.degrees(-90))
-                .frame(width: 14, height: nameW)
-                .padding(.top, 14)
-        }
-        .frame(width: 30)
-        .frame(maxHeight: .infinity)
-        .background(T.accent)
-    }
-}
-
-/// The key to the ticks of a proposed schedule, in the ticket's foot.
+/// The key to the ticks of a proposed schedule, in the card's foot.
 struct PlanKey: View {
     @Environment(\.m) var m
 
@@ -815,9 +844,10 @@ struct SchedulePlan: View {
         let p: [PlanItem]? = model.proposal
         let placedAny: Bool = p?.contains { $0.placed } ?? false
         return VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 0) {
+            // the time Plan fills on the left, what can be done on the right
+            HStack(alignment: .center, spacing: 0) {
                 Text(window).font(m.font(11.5)).foregroundColor(T.muted).fixedSize(horizontal: false, vertical: true)
-                    .padding(.trailing, 10).padding(.top, 5)
+                    .padding(.trailing, 10)
                 Spacer(minLength: 0)
                 HStack(spacing: 4) {
                     if p == nil {
@@ -829,7 +859,7 @@ struct SchedulePlan: View {
                     }
                 }
             }
-            .padding(.bottom, 6)
+            .padding(.bottom, p == nil ? 0 : 6)
             if let items = p { PlanRows(p: items, planEnd: planEnd) }
         }
     }
@@ -961,10 +991,10 @@ struct OrderPlan: View {
         let p: [Ranked]? = model.orderProposal
         let hasRows: Bool = !(p?.isEmpty ?? true)
         return VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 0) {
+            HStack(alignment: .center, spacing: 0) {
                 Text("Puts today's tasks in order for your energy now").font(m.font(11.5)).foregroundColor(T.muted)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.trailing, 10).padding(.top, 5)
+                    .padding(.trailing, 10)
                 Spacer(minLength: 0)
                 HStack(spacing: 4) {
                     if p == nil {
@@ -1019,6 +1049,27 @@ struct OrderRows: View {
 
 // ---------------------------------------------------------------- routines
 
+/// The line that names a box that opens: an arrow, the name in small capitals, a count.
+struct SectionHead: View {
+    @Environment(\.m) var m
+    let text: String
+    let count: String
+    let open: Bool
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Glyph(d: Icons.chevron, color: T.muted, th: 1.4, w: 8, h: 8)
+                .rotationEffect(.degrees(open ? 90 : 0))
+            Text(text.uppercased()).font(m.font(10, true)).foregroundColor(T.muted).lineLimit(1)
+                .padding(.leading, 9).padding(.trailing, 6)
+            Text(count).font(m.font(m.sp(10.5, 10))).foregroundColor(T.faint)
+        }
+        .frame(minHeight: m.sp(24, 22))
+        .contentShape(Rectangle())
+    }
+}
+
+/// Closed, it is one slim line, no taller than the buttons above it; open, the routines and the box to add one.
 struct RoutinesCard: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.m) var m
@@ -1027,25 +1078,18 @@ struct RoutinesCard: View {
     var body: some View {
         let all = model.routines
         let waiting = model.routinesWaiting()
-        return CardBox(surface: .field) {
+        let open: Bool = model.routinesOpen
+        return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
-                HStack(spacing: 0) {
-                    Glyph(d: "M2.5,1 L5.5,4 L2.5,7", color: T.text, th: 1.5, w: 8, h: 8)
-                        .rotationEffect(.degrees(model.routinesOpen ? 90 : 0))
-                        .padding(.trailing, 7)
-                    Caps(text: "Routines", color: T.text).padding(.trailing, 6)
-                    Text(String(all.count)).font(m.font(10.5)).foregroundColor(T.muted)
-                }
-                .contentShape(Rectangle())
-                .onTapGesture { model.routinesOpen.toggle(); model.editRoutine = nil; model.changed(); model.shell?.contentChanged() }
+                SectionHead(text: "Routines", count: String(all.count), open: open)
+                    .onTapGesture { model.routinesOpen.toggle(); model.editRoutine = nil; model.changed(); model.shell?.contentChanged() }
                 Spacer(minLength: 0)
                 if !waiting.isEmpty {
                     Btn(text: waiting.count == 1 ? "Add 1 to today" : "Add " + String(waiting.count) + " to today", kind: 1) { _ = model.addRoutinesToToday(waiting) }
                         .help("Send today's routines to your tasks, so Plan my day can place them")
                 }
             }
-            .frame(minHeight: 24)
-            if model.routinesOpen {
+            if open {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(all.enumerated()), id: \.element.id) { pair in
                         RoutineRow(i: pair.offset, r: pair.element, all: all, editFocus: $editFocus)
@@ -1055,6 +1099,53 @@ struct RoutinesCard: View {
                 .padding(.top, 6)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, m.padX)
+        .padding(.vertical, open ? m.padY : m.sp(5, 4))
+        .plate(.field, radius: m.radius, rim: m.radius)
+    }
+}
+
+/// Full Mode: the done tasks, under the routines. It is the Routines box again in the pale shade: one slim line
+/// while closed, the done tasks under it when open ("Clear" removes them).
+struct DoneCard: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.m) var m
+    @State private var clearHot = false
+
+    var body: some View {
+        let done: [TaskItem] = model.data.tasks.filter { $0.done }.sorted { ($0.doneAt ?? "") > ($1.doneAt ?? "") }
+        if !done.isEmpty { card(done) }
+    }
+
+    func card(_ done: [TaskItem]) -> some View {
+        let open: Bool = model.data.doneOpen
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 0) {
+                SectionHead(text: "Done", count: String(done.count), open: open)
+                Spacer(minLength: 0)
+                if open {
+                    Text("Clear").font(m.font(11.5)).foregroundColor(clearHot ? T.danger : T.muted)
+                        .padding(.leading, 8).padding(.vertical, 2)
+                        .contentShape(Rectangle())
+                        .onHover { clearHot = $0 }
+                        .onTapGesture { model.clearDone() }
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { model.toggleDoneOpen() }
+            if open {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(done, id: \.id) { t in TaskRow(t: t, dragging: false) }
+                }
+                .padding(.horizontal, -rowOver) // (a row reaches rowOver past its content)
+                .padding(.vertical, m.sp(4, 3))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, m.padX)
+        .padding(.vertical, m.sp(5, 4))
+        .plate(.soft, radius: m.radius, rim: m.radius)
     }
 }
 

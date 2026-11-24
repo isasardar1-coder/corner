@@ -42,6 +42,8 @@ final class AppModel: ObservableObject {
 
     var isBare: Bool { return bare && !full && !promptOnly && !settingsOpen }
     var m: M { return M(slim: !full) }
+    /// Full Mode with "Energy left" (Settings): the two columns change places.
+    var swapped: Bool { return Settings.get("SwapSides", 0) > 0.5 }
 
     // ---- add box
     var input = "" { didSet { changed() } }
@@ -54,6 +56,7 @@ final class AppModel: ObservableObject {
     var napOpen = false
     var napOffer = false
     var debtOpen = false
+    var statOpen: [Bool] = [false, false, false] // Full Mode: which of Slept, Debt and Need are showing their box
     var debtExtra = 30
     var napFrom = TimeEntryModel("from", waking: true, daytime: true)
     var napTo = TimeEntryModel("to", waking: true, daytime: true)
