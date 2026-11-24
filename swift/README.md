@@ -43,6 +43,7 @@ The app is not notarised: the first time, right-click Corner.app and choose Open
 | --- | --- |
 | `main.swift` | Start-up: one running copy per data folder (a lock file), no Dock icon, `--demo`, `--icon`, `--peek` |
 | `Panel.swift` | The shell: menu-bar icon and menu, the borderless non-activating panel, the hot corner (polled 60 times a second), showing, hiding and peeking, Full Mode, moving the panel, Cmd + scroll, the timers, the test renders |
+| `Genie.swift` | The animations, ported from `Launch.cs`: the panel's picture flying out of its corner and back in as a funnel of thin slices (out of the app icon when Corner starts), the same between the corner panel and Full Mode, drawn in a see-through window that never takes a click; the parts that grow in under the pointer, the energy view sliding down under the chips, the energy % counting up; and the test renders that show them as frames |
 | `Model.swift` | `AppModel`: everything the card shows and does (tasks, timers, prompts, the energy curve, naps, Plan, routines, check-ins, the record), ported from the Windows `Shell` |
 | `WorkModel.swift` | More of `AppModel`, ported from the `Shell` half of `Work.cs` and `EnergyFeel.cs`: Plan by Schedule / Priority and the stopwatch, the work log (`work.csv`), the pause when the Mac sleeps, locks or sits idle, the order by priority, the habit chips, the energy % you can type over |
 | `CardView.swift` | The card: header, the corner panel and Full Mode bodies, the next task and its timer (a countdown, or by priority a stopwatch), the row of chips, the add box with the habit chips under it, the 1-10 check-in, the time's-up box |
@@ -66,3 +67,10 @@ writes the panel to a PNG. Modes include `tasks`, `all`, `adding`, `energy`, `se
 `priority` (Plan by Priority, a task worked on for 12:34), `paused` (the same, then paused), `order` (Full Mode, a
 proposed order), `habits` (the chips under the add box), `planning` (Full Mode settings, the Planning card),
 `onboard0` to `onboard3` and `rise` / `dip` (the notice). A test render never pauses a task for being idle.
+
+Eight more modes show an animation as frames at fixed moments, side by side in one picture: `launch` and
+`launchclose` (out of the app icon as Corner starts, and back into it), `hoveropen` and `hoverclose` (out of the
+corner and back), `fullswitch` and `fullexit` (the corner panel flowing into Full Mode, and Full Mode going back
+down), `cycleopen` and `cycleclose` (the energy view sliding down under the chips, and folding up). Their clock is
+moved by hand, so the frames are the same on every run. Every other mode is a still picture: nothing moves in it.
+With "Reduce motion" on in System Settings the panel fades in and out as it did before and nothing flies or slides.

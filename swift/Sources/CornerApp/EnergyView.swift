@@ -88,7 +88,7 @@ struct EnergyCounter: View {
             if model.feelEditing {
                 box(pct)
             } else {
-                number(pct)
+                number(model.counted(pct)) // (counts up as the energy view opens: Genie.swift)
             }
             HStack(spacing: 4) {
                 Circle().fill(model.zoneColor(now)).frame(width: 6, height: 6).padding(.top, 1)

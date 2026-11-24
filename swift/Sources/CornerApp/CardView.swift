@@ -24,6 +24,7 @@ struct CardView: View {
             if showHeader {
                 HeaderView()
                     .background(GeometryReader { g in Color.clear.preference(key: HeaderHeightKey.self, value: g.size.height) })
+                    .modifier(model.grow(.header)) // grows in when the pointer comes onto the panel (Genie.swift)
             }
             if model.settingsOpen {
                 FitScroll(maxHeight: bodyMax - m.side) { SettingsPage() }.padding(.bottom, m.side)
@@ -182,26 +183,31 @@ struct CornerBody: View {
     let alone: Bool
 
     var body: some View {
-        let tasksView = model.tab == 0
+        // The energy view slides down under the chips while the tasks side folds away, and back (Genie.swift):
+        // `open` is 0 on the tasks side, 1 on the energy side, and between the two only while it slides.
+        let open: CGFloat = model.energyOpen
+        let tasksView = open < 1
         let rest = model.isBare
         let prompt = model.promptOnly
+        // (the header growing in under the pointer takes the top margin's place)
+        let lead: CGFloat = alone ? m.side : m.side * (1 - model.revealK)
         // the panel's bottom (and top, with no header) margin sits outside the scrolling part, so what scrolls
         // stops short of the rounded corners
         FitScroll(maxHeight: maxHeight - m.side - (alone ? m.side : 0)) {
             VStack(alignment: .leading, spacing: m.gapY) {
-                if model.checkInOpen && !rest && !prompt { CheckInView() }
-                if model.feedbackOpen { FeedbackView() }
+                if model.checkInOpen && !rest && !prompt { CheckInView().modifier(model.grow(.hover)) }
+                if model.feedbackOpen { FeedbackView().modifier(model.grow(.hover)) }
                 if model.alertTask != nil { AlertView() }
-                if tasksView && !prompt { FocusView() }
-                if !rest && !prompt { ActionRow() }
-                if tasksView && model.addOpen && !rest && !prompt { AddBox() }
-                if tasksView && model.allOpen && !rest && !prompt { TaskListCard() }
-                if !tasksView && !prompt { EnergyView() }
+                if tasksView && !prompt { FocusView().modifier(model.grow(.focus)) }
+                if !rest && !prompt { ActionRow().modifier(model.grow(.hover)) }
+                if tasksView && model.addOpen && !rest && !prompt { AddBox().modifier(model.grow(.tasks)) }
+                if tasksView && model.allOpen && !rest && !prompt { TaskListCard().modifier(model.grow(.tasks)) }
+                if open > 0 && !prompt { EnergyView().modifier(model.grow(.energy)) }
             }
             .padding(.leading, m.side)
             .padding(.trailing, m.sideMid)
         }
-        .padding(.top, alone ? m.side : 0)
+        .padding(.top, lead)
         .padding(.bottom, m.side)
     }
 }
@@ -481,7 +487,7 @@ struct ActionRow: View {
                 model.changed()
                 model.shell?.contentChanged()
             }
-            RoundChip(d: Icons.wave, on: !tasks, tip: "Energy") { model.setTab(tasks ? 1 : 0) }
+            RoundChip(d: Icons.wave, on: !tasks, tip: "Energy") { model.cycle(to: tasks ? 1 : 0) } // slides (Genie.swift)
         }
         .frame(height: 30)
     }

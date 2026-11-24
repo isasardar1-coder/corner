@@ -1,6 +1,7 @@
 // Corner for macOS - the shell: the menu-bar icon and its menu, the panel window (a borderless, non-activating
 // NSPanel hosting the SwiftUI card), the hot corner, showing and hiding, Full Mode, moving the panel, Cmd+scroll,
 // the timers, and the test renders (--demo). Port of Shell in Corner.cs, Checks.cs and ShellMac.cs.
+// The animations (the panel flying out of its corner and back, the switch to Full Mode) are in Genie.swift.
 import AppKit
 import SwiftUI
 import CornerCore
@@ -35,7 +36,7 @@ struct RootView: View {
     var body: some View {
         let s = CGFloat(model.currentScale)
         ZStack(alignment: .topLeading) {
-            if model.demoRun { T.backdrop }
+            if model.demoRun && !GenieStage.clearBackdrop { T.backdrop }
             CardView()
                 .fixedSize()
                 .background(GeometryReader { g in Color.clear.preference(key: CardSizeKey.self, value: g.size) })
@@ -72,11 +73,13 @@ final class PanelController: NSObject, NSMenuDelegate {
     var onboard: OnboardController? = nil
     var timers: [Timer] = []
     var awayTokens: [NSObjectProtocol] = []
+    let fx = GenieStage() // the animations under way (Genie.swift)
 
     init(model: AppModel) {
         self.model = model
         super.init()
         model.shell = self
+        fx.shell = self
     }
 
     static func ms() -> Double { return ProcessInfo.processInfo.systemUptime * 1000 }
@@ -124,7 +127,11 @@ final class PanelController: NSObject, NSMenuDelegate {
         watchAway()
 
         if firstRun && (!test || ProcessInfo.processInfo.environment["CORNER_ONBOARD"] == "1") { showOnboarding() }
-        else if peek { showPanel(peekMs: 6000) }
+        else if peek || !test {
+            // Corner starting: the panel opens out of its icon, rests in its corner, then goes back in (Genie.swift)
+            fx.launchZoom = true
+            showPanel(peekMs: peek ? 6000 : 4500)
+        }
         model.checkReminders()
     }
 
@@ -358,6 +365,9 @@ final class PanelController: NSObject, NSMenuDelegate {
         if model.shown { return }
         gen += 1
         awaySince = 0
+        let warp = fx.switchWarp // Full Mode flowing out of the corner panel: enterFull flies its picture (Genie.swift)
+        if !warp { stopGenie() } // (a panel still on its way back in is dropped)
+        fx.resetGlides()
         model.prepareShow()
         hosting.layoutSubtreeIfNeeded()
         let mh = maxCardHeight()
@@ -365,8 +375,14 @@ final class PanelController: NSObject, NSMenuDelegate {
         model.changed()
         hosting.layoutSubtreeIfNeeded()
         let target = targetFrame()
+        let launching = fx.launchZoom
+        fx.launchZoom = false
+        // the corner panel comes out of its corner as one picture; out of the app icon when Corner starts (Genie.swift)
+        let genie = !warp && !model.full && fx.live
         var from = target
-        if !model.full {
+        if genie || warp {
+            // the picture does the moving: the window waits in its place, unseen
+        } else if !model.full {
             from.origin.x += model.onRight ? 18 : -18
             from.origin.y += model.onTop ? 12 : -12
         } else {
@@ -384,6 +400,11 @@ final class PanelController: NSObject, NSMenuDelegate {
             window.level = .statusBar
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
             window.orderFrontRegardless()
+        }
+        if genie || warp {
+            programmaticMove -= 1
+            if genie { genieSoon(icon: launching) }
+            return
         }
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.32
@@ -406,6 +427,16 @@ final class PanelController: NSObject, NSMenuDelegate {
         model.whenOpenId = nil
         if let id = model.editId, let t = model.data.tasks.first(where: { $0.id == id }) { model.finishEdit(t, t.title, keep: false) }
         peekUntil = 0
+        fx.freezeGlides()
+        let fly = fx.back && fx.live
+        fx.back = false
+        let gone: () -> Void = { [weak self] in
+            guard let s = self else { return }
+            if s.gen == g { s.window.orderOut(nil) }
+        }
+        if fly && genieHide(done: gone) { return } // back into its corner as one picture (Genie.swift)
+        fx.icon = false
+        stopGenie()
         var to = window.frame
         to.origin.x += model.onRight ? 10 : -10
         to.origin.y += model.onTop ? 6 : -6
@@ -425,6 +456,14 @@ final class PanelController: NSObject, NSMenuDelegate {
 
     func enterFull() {
         if model.full { activateFull(); return }
+        // Full Mode flows out of the corner panel's picture, or out of the corner's square when the panel was
+        // closed (Genie.swift). The picture is held on top while the window changes under it.
+        let warp = fx.live
+        fx.miniPic = nil
+        if warp { grabMini() } else { stopGenie() }
+        fx.back = false
+        fx.icon = false
+        if warp { holdMini() }
         window.orderOut(nil)
         model.shown = false
         gen += 1
@@ -432,7 +471,13 @@ final class PanelController: NSObject, NSMenuDelegate {
         model.paused = false
         model.promptOnly = false
         setTrayTip("Corner")
+        fx.switchWarp = warp
         showPanel(peekMs: 0)
+        fx.switchWarp = false
+        if warp {
+            fx.pending = true
+            settleThen(gen, cardSize, 0, 3) { [weak self] in self?.warpIntoFull() }
+        }
     }
 
     func activateFull() {
@@ -442,6 +487,8 @@ final class PanelController: NSObject, NSMenuDelegate {
 
     func exitFull() {
         if !model.full { return }
+        // its picture flows back down into the corner on top, and the window goes under it (Genie.swift)
+        if !(fx.live && warpOutOfFull()) { stopGenie() }
         model.full = false
         model.shown = false
         gen += 1
@@ -574,6 +621,7 @@ final class PanelController: NSObject, NSMenuDelegate {
         model.whenOpenId = model.data.tasks[2].id
         model.data.tasks[3].setDue(Date().dateOnly.addingDays(-1), hasTime: false)
         model.input = "Dentist nov 30 at 2pm"
+        if GenieStage.demoModes.contains(mode) { demoMotion(path, mode); return } // an animation, as frames side by side (Genie.swift)
         let fullOnly = mode == "order" || mode == "planning" // these two are of Full Mode
         let full = fullOnly || mode.hasPrefix("full") || ProcessInfo.processInfo.environment["CORNER_FULL"] == "1"
         if mode.hasPrefix("full") { mode = String(mode.dropFirst(4)); if mode.isEmpty { mode = "tasks" } }
