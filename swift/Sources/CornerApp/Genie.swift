@@ -838,11 +838,13 @@ extension PanelController {
         model.changed()
         let open: [Double] = [30, 80, 130, 190, 280, 450, 700]
         let close: [Double] = [120, 240, 330, 420, 520, 640]
+        // (a flight starts a moment after it is asked for, once the card is laid out: the frames wait for that)
+        let flying: (PanelController) -> Bool = { s in s.fx.warp != nil }
         switch mode {
         case "launch", "hoveropen", "hoverbottom":
-            demoAfter(0.7) { s in s.demoFrames(path, open, 0, 0) }
+            demoWhen(0, flying) { s in s.demoFrames(path, open, 0, 0) }
         case "launchclose", "hoverclose":
-            demoAfter(0.7) { s in
+            demoWhen(0, flying) { s in
                 s.fx.advance(to: 900)
                 s.demoAfter(0.5) { s2 in
                     s2.hidePanel()
@@ -853,13 +855,13 @@ extension PanelController {
             demoAfter(1.2) { s in
                 s.demoBegin()
                 s.enterFull()
-                s.demoAfter(0.9) { s2 in s2.demoFrames(path, [40, 110, 190, 280, 390, 590, 700], 0, 0) }
+                s.demoWhen(0, flying) { s2 in s2.demoFrames(path, [40, 110, 190, 280, 390, 590, 700], 0, 0) }
             }
         case "fullexit":
             demoAfter(1.2) { s in
                 s.demoBegin()
                 s.enterFull()
-                s.demoAfter(0.9) { s2 in
+                s.demoWhen(0, flying) { s2 in
                     s2.fx.advance(to: 1500)
                     s2.demoAfter(0.5) { s3 in
                         s3.exitFull()
@@ -875,7 +877,7 @@ extension PanelController {
             }
         case "hoverback":
             // the pointer leaves while the panel is still flying out: it goes back in from where it would have landed
-            demoAfter(0.7) { s in
+            demoWhen(0, flying) { s in
                 s.fx.advance(to: 200)
                 s.demoAfter(0.4) { s2 in
                     s2.fx.shots.append(s2.demoShot(200))
@@ -885,7 +887,7 @@ extension PanelController {
             }
         case "hoveragain":
             // opened again before it has finished going back in: the next task alone flies out, not the old picture
-            demoAfter(0.7) { s in
+            demoWhen(0, flying) { s in
                 s.fx.advance(to: 900)
                 s.demoAfter(0.5) { s2 in
                     s2.hidePanel()
@@ -893,18 +895,18 @@ extension PanelController {
                     s2.demoAfter(0.4) { s3 in
                         s3.fx.shots.append(s3.demoShot(1100))
                         s3.showPanel(peekMs: 600000)
-                        s3.demoAfter(0.6) { s4 in s4.demoFrames(path, [30, 130, 280, 450, 600], 1100, 0) }
+                        s3.demoWhen(0, flying) { s4 in s4.demoFrames(path, [30, 130, 280, 450, 600], 1100, 0) }
                     }
                 }
             }
         case "fullearly":
             // Full Mode entered while the corner panel is still flying out
-            demoAfter(0.7) { s in
+            demoWhen(0, flying) { s in
                 s.fx.advance(to: 200)
                 s.demoAfter(0.4) { s2 in
                     s2.fx.shots.append(s2.demoShot(200))
                     s2.enterFull()
-                    s2.demoAfter(0.9) { s3 in s3.demoFrames(path, [40, 190, 390, 560, 700], 200, 0) }
+                    s2.demoWhen(0, flying) { s3 in s3.demoFrames(path, [40, 190, 390, 560, 700], 200, 0) }
                 }
             }
         default: // cycleclose
@@ -929,6 +931,17 @@ extension PanelController {
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
             guard let s = self else { exit(1) }
             work(s)
+        }
+    }
+
+    /// Waits, in real time, until `ready`, and a moment more for the card to lay itself out (eight seconds at most).
+    func demoWhen(_ tries: Int, _ ready: @escaping (PanelController) -> Bool, _ work: @escaping (PanelController) -> Void) {
+        demoAfter(0.05) { s in
+            if ready(s) || tries >= 160 {
+                s.demoAfter(0.4, work)
+            } else {
+                s.demoWhen(tries + 1, ready, work)
+            }
         }
     }
 
@@ -980,7 +993,7 @@ extension PanelController {
             return
         }
         stage = stage.insetBy(dx: -10, dy: -10)
-        let q: CGFloat = min(1, 640 / stage.width) // wide frames (most of the screen) are drawn smaller
+        let q: CGFloat = min(1, 1100 / stage.width) // frames wider than that (most of a large screen) are drawn smaller
         let fw: Int = Int((stage.width * q).rounded())
         let fh: Int = Int((stage.height * q).rounded())
         let gapPx: Int = 8
