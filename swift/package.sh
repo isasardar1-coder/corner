@@ -54,8 +54,8 @@ ls -la out
 
 [ "${DEMOS:-1}" = "0" ] && exit 0
 
-# test renders: each mode starts from an empty data folder. The last eight show an animation as frames side by side.
-MODES="${DEMO_MODES:-tasks all adding energy settings checkin feedback timeup debt nap glass rest full fullenergy fullplan fullapplied fullroutines fullsettings priority paused order habits planning onboard0 onboard1 onboard2 onboard3 rise launch launchclose hoveropen hoverclose fullswitch fullexit cycleopen cycleclose}"
+# test renders: each mode starts from an empty data folder. Those from "launch" on show an animation as frames side by side.
+MODES="${DEMO_MODES:-tasks all adding energy settings checkin feedback timeup debt nap glass rest full fullenergy fullplan fullapplied fullroutines fullsettings priority paused order habits planning onboard0 onboard1 onboard2 onboard3 rise launch launchclose hoveropen hoverclose fullswitch fullexit cycleopen cycleclose hoverback hoveragain fullearly}"
 fail=0
 for mode in $MODES; do
   data="$(mktemp -d)"

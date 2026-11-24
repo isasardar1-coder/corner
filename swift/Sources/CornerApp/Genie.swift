@@ -222,7 +222,8 @@ struct GenieLayer {
 
 final class GenieStage {
     /// The test renders that show an animation as frames side by side.
-    static let demoModes: [String] = ["launch", "launchclose", "hoveropen", "hoverclose", "fullswitch", "fullexit", "cycleopen", "cycleclose"]
+    static let demoModes: [String] = ["launch", "launchclose", "hoveropen", "hoverclose", "fullswitch", "fullexit", "cycleopen", "cycleclose",
+                                      "hoverback", "hoveragain", "fullearly"]
     /// Those renders paint the sand backdrop themselves, behind every frame: the panel's own view is left clear.
     static var clearBackdrop = false
     static let iconSide: CGFloat = 64
@@ -247,6 +248,9 @@ final class GenieStage {
     var miniPic: CGImage? = nil // the corner panel as it was when Full Mode opened, and where it was
     var miniRect: CGRect = .zero
     var reach: CGRect = .null   // where the Full Mode window may come to be: the see-through window covers it from the start
+    var entering = false        // the corner panel's picture is on top; the window is about to change to Full Mode under it
+    var leaving = false         // Full Mode's picture is on top, flowing back down; the window is about to go under it
+    var fades = 0               // (counts the uses of the see-through window: a fade that has been overtaken does nothing)
     var dirty: CGRect = .zero   // the part of the see-through window the flight under way draws in
 
     var revealStart: Double = -1   // the parts growing in under the pointer; -1 = not running
@@ -331,12 +335,17 @@ final class GenieStage {
             view?.setNeedsDisplay(dirty)
             if finished {
                 let d = warpDone
+                let landed: Bool = w.opening
                 warp = nil
                 warpDone = nil
-                if let dd = d { dd() } // the real panel takes over; then the picture goes, in the same turn of the run loop
+                if let dd = d { dd() } // the real panel takes over
                 if warp == nil {
-                    view?.warp = nil
-                    window?.orderOut(nil)
+                    if landed {
+                        letGo()
+                    } else {
+                        view?.warp = nil
+                        window?.orderOut(nil)
+                    }
                 }
             }
         }
@@ -367,6 +376,36 @@ final class GenieStage {
         }
         if touched { m.changed() }
         if warp == nil && revealStart < 0 && cycleStart < 0 && countStart < 0 { stopTimer() }
+    }
+
+    /// The picture has landed and the real panel is showing under it, the same to the eye: the picture fades off
+    /// over a few frames, so there is no moment with neither of them on the screen.
+    func letGo() {
+        guard let w = window else { return }
+        fades += 1
+        let mine: Int = fades
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.07
+            w.animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            guard let s = self, s.fades == mine else { return }
+            s.view?.warp = nil
+            w.orderOut(nil)
+            w.alphaValue = 1
+        })
+    }
+
+    /// The see-through window is wanted again, or dropped: a fade that was taking it off is overtaken.
+    func claim() {
+        fades += 1
+        guard let w = window else { return }
+        if w.alphaValue < 1 {
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0
+                w.animator().alphaValue = 1
+            }, completionHandler: nil)
+            w.alphaValue = 1
+        }
     }
 
     /// A test render: moves time on to `ms`, in steps as small as the real frames.
@@ -616,7 +655,13 @@ extension PanelController {
         let withIcon: Bool = fx.icon
         fx.icon = false
         if !runGenie(pic, to: to, neck: neck, neckPic: nil, opening: false, ms: withIcon ? 460 : 380, showIcon: withIcon, done: done) { return false }
-        window.alphaValue = 0
+        // The picture is on top now, the same to the eye. The panel under it goes two frames later, so there is no
+        // moment with neither of them on the screen (the picture has hardly begun to move by then).
+        let g: Int = gen
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.034) { [weak self] in
+            guard let s = self, s.gen == g else { return }
+            s.window.alphaValue = 0
+        }
         return true
     }
 
@@ -632,6 +677,7 @@ extension PanelController {
             v.warp = nil
             v.held = nil
         }
+        fx.claim()
         if let w = fx.window, w.isVisible { w.orderOut(nil) }
         if flying { window.alphaValue = model.shown ? 1 : 0 }
     }
@@ -646,6 +692,7 @@ extension PanelController {
                                    logo: showIcon ? GenieStage.logo : nil, opening: opening, ms: ms) else { return false }
         let v: GenieView = fx.ensureWindow()
         guard let w = fx.window else { return false }
+        fx.claim()
         fx.pending = false
         fx.warp = warp
         fx.warpDone = done
@@ -688,6 +735,7 @@ extension PanelController {
         let area: CGRect = r.union(fx.reach).insetBy(dx: -16, dy: -16).integral
         let v: GenieView = fx.ensureWindow()
         guard let w = fx.window else { return }
+        fx.claim()
         v.warp = nil
         v.held = pic
         v.heldAt = CGRect(x: r.minX - area.minX, y: area.maxY - r.maxY, width: r.width, height: r.height)
@@ -700,7 +748,7 @@ extension PanelController {
     /// From enterFull, once the Full Mode window is laid out in its place: out of the corner panel (or the square).
     func warpIntoFull() {
         fx.pending = false
-        if !model.full || !model.shown { return }
+        if !model.full || !model.shown || fx.leaving { return }
         place(animated: false)
         var ok = false
         if let pic = GenieStage.picture(hosting) {
@@ -743,7 +791,7 @@ extension PanelController {
     func demoMotion(_ path: String, _ mode: String) {
         GenieStage.clearBackdrop = true
         FitScrollFlag.plain = false // the real scroll views: the pictures are taken as they are on a real screen
-        let early: Bool = mode.hasPrefix("launch") || mode.hasPrefix("hover")
+        let early: Bool = mode.hasPrefix("launch") || mode.hasPrefix("hover") || mode == "fullearly" // the panel itself flies out
         if early { demoBegin() }
         if mode.hasPrefix("launch") { fx.launchZoom = true }
         demoSeed(mode)
@@ -786,6 +834,40 @@ extension PanelController {
                 s.demoBegin()
                 s.model.cycle(to: 1)
                 s.demoFrames(path, [30, 90, 160, 240, 330, 600], 0, 0)
+            }
+        case "hoverback":
+            // the pointer leaves while the panel is still flying out: it goes back in from where it would have landed
+            demoAfter(0.7) { s in
+                s.fx.advance(to: 200)
+                s.demoAfter(0.4) { s2 in
+                    s2.fx.shots.append(s2.demoShot(200))
+                    s2.hidePanel()
+                    s2.demoFrames(path, [20, 100, 200, 300, 400], 200, 0)
+                }
+            }
+        case "hoveragain":
+            // opened again before it has finished going back in: the next task alone flies out, not the old picture
+            demoAfter(0.7) { s in
+                s.fx.advance(to: 900)
+                s.demoAfter(0.5) { s2 in
+                    s2.hidePanel()
+                    s2.fx.advance(to: 1100)
+                    s2.demoAfter(0.4) { s3 in
+                        s3.fx.shots.append(s3.demoShot(1100))
+                        s3.showPanel(peekMs: 600000)
+                        s3.demoAfter(0.6) { s4 in s4.demoFrames(path, [30, 130, 280, 450, 600], 1100, 0) }
+                    }
+                }
+            }
+        case "fullearly":
+            // Full Mode entered while the corner panel is still flying out
+            demoAfter(0.7) { s in
+                s.fx.advance(to: 200)
+                s.demoAfter(0.4) { s2 in
+                    s2.fx.shots.append(s2.demoShot(200))
+                    s2.enterFull()
+                    s2.demoAfter(0.9) { s3 in s3.demoFrames(path, [40, 190, 390, 560, 700], 200, 0) }
+                }
             }
         default: // cycleclose
             demoAfter(1.2) { s in

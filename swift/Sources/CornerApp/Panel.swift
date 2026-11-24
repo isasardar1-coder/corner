@@ -421,6 +421,7 @@ final class PanelController: NSObject, NSMenuDelegate {
     func hidePanel() {
         if !model.shown { return }
         if model.full { exitFull(); return }
+        if fx.entering { return } // (on its way into Full Mode)
         model.shown = false
         gen += 1
         let g = gen
@@ -456,17 +457,31 @@ final class PanelController: NSObject, NSMenuDelegate {
 
     func enterFull() {
         if model.full { activateFull(); return }
+        if fx.entering { return }
         // Full Mode flows out of the corner panel's picture, or out of the corner's square when the panel was
-        // closed (Genie.swift). The picture is held on top while the window changes under it.
+        // closed (Genie.swift).
         let warp = fx.live
         fx.miniPic = nil
         if warp { grabMini() } else { stopGenie() }
         fx.back = false
         fx.icon = false
-        if warp {
+        if warp && fx.miniPic != nil {
+            // The corner panel's picture is held on top, the same to the eye; the window changes under it two
+            // frames later, so there is no moment with neither of them on the screen.
             fx.reach = fullReach()
             holdMini()
+            fx.entering = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.034) { [weak self] in
+                guard let s = self else { return }
+                s.fx.entering = false
+                if !s.model.full { s.switchToFull(warp: true) }
+            }
+            return
         }
+        switchToFull(warp: warp)
+    }
+
+    func switchToFull(warp: Bool) {
         window.orderOut(nil)
         model.shown = false
         gen += 1
@@ -478,6 +493,7 @@ final class PanelController: NSObject, NSMenuDelegate {
         showPanel(peekMs: 0)
         fx.switchWarp = false
         if warp {
+            // its picture flies once the Full Mode card is laid out (Genie.swift)
             fx.pending = true
             settleThen(gen, cardSize, 0, 3) { [weak self] in self?.warpIntoFull() }
         }
@@ -489,9 +505,22 @@ final class PanelController: NSObject, NSMenuDelegate {
     }
 
     func exitFull() {
+        if !model.full || fx.leaving { return }
+        // Its picture flows back down into the corner on top (Genie.swift); the window goes under it two frames
+        // later, so there is no moment with neither of them on the screen.
+        if fx.live && warpOutOfFull() {
+            gen += 1
+            fx.leaving = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.034) { [weak self] in self?.leaveFull() }
+            return
+        }
+        stopGenie()
+        leaveFull()
+    }
+
+    func leaveFull() {
+        fx.leaving = false
         if !model.full { return }
-        // its picture flows back down into the corner on top, and the window goes under it (Genie.swift)
-        if !(fx.live && warpOutOfFull()) { stopGenie() }
         model.full = false
         model.shown = false
         gen += 1
@@ -505,7 +534,7 @@ final class PanelController: NSObject, NSMenuDelegate {
     /// About 60 times a second: rest the pointer in the corner for 140 ms to open the panel; it hides 260 ms after
     /// the pointer leaves the panel and the room round it. Not while a mouse button is down (a window's buttons sit there).
     func mouseTick() {
-        if model.demoRun || model.full { return }
+        if model.demoRun || model.full || fx.entering { return }
         guard let scr = screen else { return }
         let p = NSEvent.mouseLocation
         let sb = scr.frame

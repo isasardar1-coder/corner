@@ -72,5 +72,8 @@ Eight more modes show an animation as frames at fixed moments, side by side in o
 `launchclose` (out of the app icon as Corner starts, and back into it), `hoveropen` and `hoverclose` (out of the
 corner and back), `fullswitch` and `fullexit` (the corner panel flowing into Full Mode, and Full Mode going back
 down), `cycleopen` and `cycleclose` (the energy view sliding down under the chips, and folding up). Their clock is
-moved by hand, so the frames are the same on every run. Every other mode is a still picture: nothing moves in it.
+moved by hand, so the frames are the same on every run. Three more show an animation being cut short: `hoverback`
+(the pointer leaves while the panel is still flying out), `hoveragain` (it is opened again before it has gone back
+in) and `fullearly` (Full Mode entered while the panel is flying out). Every other mode is a still picture: nothing
+moves in it.
 With "Reduce motion" on in System Settings the panel fades in and out as it did before and nothing flies or slides.
