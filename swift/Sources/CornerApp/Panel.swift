@@ -463,7 +463,10 @@ final class PanelController: NSObject, NSMenuDelegate {
         if warp { grabMini() } else { stopGenie() }
         fx.back = false
         fx.icon = false
-        if warp { holdMini() }
+        if warp {
+            fx.reach = fullReach()
+            holdMini()
+        }
         window.orderOut(nil)
         model.shown = false
         gen += 1

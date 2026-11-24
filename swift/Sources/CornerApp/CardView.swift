@@ -194,16 +194,18 @@ struct CornerBody: View {
         // the panel's bottom (and top, with no header) margin sits outside the scrolling part, so what scrolls
         // stops short of the rounded corners
         FitScroll(maxHeight: maxHeight - m.side - (alone ? m.side : 0)) {
-            VStack(alignment: .leading, spacing: m.gapY) {
+            // (each part carries the gap that follows it, so the gap grows and folds with the part; the last one's is taken off)
+            VStack(alignment: .leading, spacing: 0) {
                 if model.checkInOpen && !rest && !prompt { CheckInView().modifier(model.grow(.hover)) }
                 if model.feedbackOpen { FeedbackView().modifier(model.grow(.hover)) }
-                if model.alertTask != nil { AlertView() }
+                if model.alertTask != nil { AlertView().padding(.bottom, m.gapY) }
                 if tasksView && !prompt { FocusView().modifier(model.grow(.focus)) }
                 if !rest && !prompt { ActionRow().modifier(model.grow(.hover)) }
                 if tasksView && model.addOpen && !rest && !prompt { AddBox().modifier(model.grow(.tasks)) }
                 if tasksView && model.allOpen && !rest && !prompt { TaskListCard().modifier(model.grow(.tasks)) }
                 if open > 0 && !prompt { EnergyView().modifier(model.grow(.energy)) }
             }
+            .padding(.bottom, -m.gapY)
             .padding(.leading, m.side)
             .padding(.trailing, m.sideMid)
         }

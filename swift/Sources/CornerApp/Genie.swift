@@ -188,7 +188,6 @@ final class GenieView: NSView {
     var warp: GenieWarp? = nil
     var held: CGImage? = nil
     var heldAt: CGRect = .zero
-    var pixel: CGFloat = 0
 
     override var isOpaque: Bool { return false }
     override func hitTest(_ point: NSPoint) -> NSView? { return nil }
@@ -197,7 +196,7 @@ final class GenieView: NSView {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         let h: CGFloat = bounds.height
         if let w = warp {
-            let k: CGFloat = pixel > 0 ? pixel : (window?.backingScaleFactor ?? 2)
+            let k: CGFloat = window?.backingScaleFactor ?? 2
             w.draw(ctx, height: h, pixel: k)
         } else if let p = held {
             ctx.draw(p, in: GenieWarp.up(heldAt, h))
@@ -227,6 +226,8 @@ final class GenieStage {
     /// Those renders paint the sand backdrop themselves, behind every frame: the panel's own view is left clear.
     static var clearBackdrop = false
     static let iconSide: CGFloat = 64
+    /// What the last picture taken was like: for the log of a test render.
+    static var note: String = ""
 
     weak var shell: PanelController?
     var window: GenieWindow? = nil
@@ -245,6 +246,8 @@ final class GenieStage {
     var switchWarp = false      // showPanel: nothing fades in, the switch to Full Mode draws the window as one picture
     var miniPic: CGImage? = nil // the corner panel as it was when Full Mode opened, and where it was
     var miniRect: CGRect = .zero
+    var reach: CGRect = .null   // where the Full Mode window may come to be: the see-through window covers it from the start
+    var dirty: CGRect = .zero   // the part of the see-through window the flight under way draws in
 
     var revealStart: Double = -1   // the parts growing in under the pointer; -1 = not running
     var cycleStart: Double = -1    // the energy view sliding down, or folding up
@@ -274,8 +277,9 @@ final class GenieStage {
         var r = NSRect(x: 0, y: 0, width: img.size.width, height: img.size.height)
         guard let big = img.cgImage(forProposedRect: &r, context: nil, hints: nil) else { return nil }
         let side: Int = 256
+        let space: CGColorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
         guard let ctx = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
-                                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return big }
+                                  space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return big }
         ctx.interpolationQuality = .high
         ctx.draw(big, in: CGRect(x: 0, y: 0, width: side, height: side))
         return ctx.makeImage() ?? big
@@ -324,7 +328,7 @@ final class GenieStage {
         let t: Double = now()
         if let w = warp {
             let finished: Bool = w.step(t - warpStart)
-            view?.needsDisplay = true
+            view?.setNeedsDisplay(dirty)
             if finished {
                 let d = warpDone
                 warp = nil
@@ -399,12 +403,18 @@ final class GenieStage {
 
     // ------------------------------------------------------------ pictures
 
-    /// A view as a picture, `scale` pixels to the point.
-    static func raw(_ view: NSView, _ scale: CGFloat) -> CGImage? {
+    /// A view as a picture, in its own screen's pixels and colours: drawn back on that screen it is the same to the eye.
+    static func raw(_ view: NSView) -> CGImage? {
         let b: NSRect = view.bounds
-        let pw: Int = Int((b.width * scale).rounded())
-        let ph: Int = Int((b.height * scale).rounded())
-        if pw < 2 || ph < 2 { return nil }
+        if b.width < 1 || b.height < 1 { return nil }
+        if let rep = view.bitmapImageRepForCachingDisplay(in: b) {
+            if let d = rep.bitmapData { memset(d, 0, rep.bytesPerRow * rep.pixelsHigh) } // (clear first: most of it is see-through)
+            view.cacheDisplay(in: b, to: rep)
+            if let img = rep.cgImage { return img }
+        }
+        // (no such bitmap, as for a view in no window: a plain one, two pixels to the point)
+        let pw: Int = Int((b.width * 2).rounded())
+        let ph: Int = Int((b.height * 2).rounded())
         guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: pw, pixelsHigh: ph, bitsPerSample: 8, samplesPerPixel: 4,
                                          hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
         rep.size = b.size
@@ -415,19 +425,26 @@ final class GenieStage {
     /// The panel as a picture, shadow and all. A bitmap of a view does not clip a scroll view's content the way the
     /// screen does, so where a list is longer than its box the picture is put together from two: one without the
     /// lists, and the lists cut to their boxes. Nil when nothing was drawn.
-    static func picture(_ view: NSView, _ scale: CGFloat) -> CGImage? {
+    static func picture(_ view: NSView) -> CGImage? {
         view.layoutSubtreeIfNeeded()
-        guard let whole = raw(view, scale) else { return nil }
+        guard let whole = raw(view) else { return nil }
         var scrolls: [NSScrollView] = []
         overflowing(view, &scrolls)
         var out: CGImage = whole
+        var mended = false
         if !scrolls.isEmpty {
             for s in scrolls { s.documentView?.isHidden = true }
-            let under: CGImage? = raw(view, scale)
+            let under: CGImage? = raw(view)
             for s in scrolls { s.documentView?.isHidden = false }
-            if let u = under, let fixed = patch(whole, u, scrolls, view, scale) { out = fixed }
+            if let u = under, let fixed = patch(whole, u, scrolls, view) {
+                out = fixed
+                mended = true
+            }
         }
-        return blank(out) ? nil : out
+        let empty: Bool = blank(out)
+        note = String(out.width) + "x" + String(out.height) + " px, " + String(scrolls.count) + " long lists"
+            + (mended ? " cut to their boxes" : "") + (empty ? ", empty" : "")
+        return empty ? nil : out
     }
 
     /// The scroll views whose content does not fit, or has been scrolled.
@@ -447,14 +464,17 @@ final class GenieStage {
         }
     }
 
-    static func patch(_ whole: CGImage, _ under: CGImage, _ scrolls: [NSScrollView], _ view: NSView, _ scale: CGFloat) -> CGImage? {
+    static func patch(_ whole: CGImage, _ under: CGImage, _ scrolls: [NSScrollView], _ view: NSView) -> CGImage? {
         let w: Int = whole.width
         let h: Int = whole.height
+        let vh: CGFloat = view.bounds.height
+        if vh < 1 || under.width != w || under.height != h { return nil }
+        let scale: CGFloat = CGFloat(h) / vh
+        let space: CGColorSpace = whole.colorSpace ?? CGColorSpaceCreateDeviceRGB() // (the picture's own colours, unchanged)
         guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
-                                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+                                  space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
         let all = CGRect(x: 0, y: 0, width: w, height: h)
         ctx.draw(under, in: all)
-        let vh: CGFloat = view.bounds.height
         for s in scrolls {
             let r: NSRect = s.convert(s.bounds, to: view)
             let fromBottom: CGFloat = view.isFlipped ? vh - r.maxY : r.minY
@@ -492,9 +512,6 @@ final class GenieStage {
 // ---------------------------------------------------------------- the shell's part
 
 extension PanelController {
-    /// How many pixels to the point the pictures are taken at.
-    var picScale: CGFloat { return fx.manual ? 2 : max(1, window.backingScaleFactor) }
-
     /// The icon's square, where the panel comes out of and goes back into: just inside the panel's corner.
     /// `card` is the card's place on the screen (AppKit: y points up).
     func iconRect(_ card: CGRect) -> CGRect {
@@ -514,6 +531,22 @@ extension PanelController {
         let x: CGFloat = model.onRight ? vf.maxX - m - s : vf.minX + m
         let y: CGFloat = model.onTop ? vf.maxY - m - s : vf.minY + m
         return CGRect(x: x, y: y, width: s, height: s)
+    }
+
+    /// Where the Full Mode window can come to be, whatever its height turns out to be (see targetFrame).
+    func fullReach() -> CGRect {
+        guard let scr = screen else { return CGRect.null }
+        let vf: CGRect = scr.visibleFrame
+        let s: CGFloat = CGFloat(model.fullScale)
+        let w: CGFloat = fullW * s + 2 * shadowM
+        var x: CGFloat = vf.midX - w / 2
+        var top: CGFloat = vf.maxY - 20 + shadowM
+        if Settings.get("MacFullMoved", 0) > 0.5 {
+            x = max(vf.minX - shadowM, min(vf.maxX - w + shadowM, CGFloat(Settings.get("MacFullX", Double(x)))))
+            top = max(vf.minY + 260, min(vf.maxY + shadowM, CGFloat(Settings.get("MacFullTop", Double(top)))))
+        }
+        let tallest: CGFloat = max(300 * s, vf.height - 40) + 2 * shadowM
+        return CGRect(x: x, y: top - tallest, width: w, height: tallest)
     }
 
     /// Calls `then` when the card has stopped changing size (parts of it measure themselves, which takes a pass or
@@ -544,13 +577,13 @@ extension PanelController {
         if !model.shown || model.full { return }
         place(animated: false)
         var ok = false
-        if let pic = GenieStage.picture(hosting, picScale) {
+        if let pic = GenieStage.picture(hosting) {
             let to: CGRect = window.frame
             let neck: CGRect = iconRect(to.insetBy(dx: shadowM, dy: shadowM))
             ok = runGenie(pic, to: to, neck: neck, neckPic: nil, opening: true, ms: icon ? 560 : 420, showIcon: icon,
                           done: { [weak self] in self?.landed() })
         }
-        if model.demoRun { Store.log("genie open: " + (ok ? "flying" : "no picture") + " window " + NSStringFromRect(window.frame)) }
+        if model.demoRun { Store.log("genie open: " + (ok ? "flying" : "no picture") + " window " + NSStringFromRect(window.frame) + " picture " + GenieStage.note) }
         if ok {
             fx.back = true
             fx.icon = icon
@@ -577,7 +610,7 @@ extension PanelController {
     func genieHide(done: @escaping () -> Void) -> Bool {
         if model.full { return false }
         stopGenie()
-        guard window.isVisible, let pic = GenieStage.picture(hosting, picScale) else { return false }
+        guard window.isVisible, let pic = GenieStage.picture(hosting) else { return false }
         let to: CGRect = window.frame
         let neck: CGRect = iconRect(to.insetBy(dx: shadowM, dy: shadowM))
         let withIcon: Bool = fx.icon
@@ -605,8 +638,8 @@ extension PanelController {
 
     /// Puts the see-through window over the two places and starts the flight. `to` and `neck` are on the screen.
     func runGenie(_ pic: CGImage, to: CGRect, neck: CGRect, neckPic: CGImage?, opening: Bool, ms: Double, showIcon: Bool,
-                  done: (() -> Void)?) -> Bool {
-        let area: CGRect = to.union(neck).insetBy(dx: -16, dy: -16).integral // (the icon swells past its square)
+                  reach: CGRect = .null, done: (() -> Void)?) -> Bool {
+        let area: CGRect = to.union(neck).union(reach).insetBy(dx: -16, dy: -16).integral // (the icon swells past its square)
         let toIn = CGRect(x: to.minX - area.minX, y: area.maxY - to.maxY, width: to.width, height: to.height)
         let neckIn = CGRect(x: neck.minX - area.minX, y: area.maxY - neck.maxY, width: neck.width, height: neck.height)
         guard let warp = GenieWarp(pic: pic, to: toIn, neck: neckIn, neckAtTop: model.onTop, neckPic: neckPic,
@@ -617,11 +650,11 @@ extension PanelController {
         fx.warp = warp
         fx.warpDone = done
         fx.warpStart = fx.now()
+        fx.dirty = GenieWarp.up(toIn.union(neckIn).insetBy(dx: -16, dy: -16), area.height) // (only this much is drawn again each frame)
         _ = warp.step(0)
         v.held = nil
         v.warp = warp
-        v.pixel = picScale
-        w.setFrame(area, display: false)
+        if w.frame != area { w.setFrame(area, display: false) }
         v.needsDisplay = true
         w.orderFrontRegardless()
         w.displayIfNeeded()
@@ -641,7 +674,7 @@ extension PanelController {
         let open: Bool = model.shown && !model.full && window.isVisible
         stopGenie()
         if !open { return }
-        if let p = GenieStage.picture(hosting, picScale) {
+        if let p = GenieStage.picture(hosting) {
             fx.miniPic = p
             fx.miniRect = window.frame
         }
@@ -651,7 +684,8 @@ extension PanelController {
     func holdMini() {
         guard let pic = fx.miniPic else { return }
         let r: CGRect = fx.miniRect
-        let area: CGRect = r.insetBy(dx: -16, dy: -16).integral
+        // (the window is put where the flight will need it, so it does not have to change while it is on the screen)
+        let area: CGRect = r.union(fx.reach).insetBy(dx: -16, dy: -16).integral
         let v: GenieView = fx.ensureWindow()
         guard let w = fx.window else { return }
         v.warp = nil
@@ -669,12 +703,12 @@ extension PanelController {
         if !model.full || !model.shown { return }
         place(animated: false)
         var ok = false
-        if let pic = GenieStage.picture(hosting, picScale) {
+        if let pic = GenieStage.picture(hosting) {
             let neck: CGRect = fx.miniPic != nil ? fx.miniRect : cornerIcon()
             ok = runGenie(pic, to: window.frame, neck: neck, neckPic: fx.miniPic, opening: true, ms: 600, showIcon: false,
-                          done: { [weak self] in self?.window.alphaValue = 1 })
+                          reach: fx.miniPic != nil ? fx.reach : CGRect.null, done: { [weak self] in self?.window.alphaValue = 1 })
         }
-        if model.demoRun { Store.log("warp into full: " + (ok ? "flying" : "no picture") + " window " + NSStringFromRect(window.frame)) }
+        if model.demoRun { Store.log("warp into full: " + (ok ? "flying" : "no picture") + " window " + NSStringFromRect(window.frame) + " picture " + GenieStage.note) }
         fx.miniPic = nil
         if !ok {
             stopGenie()
@@ -685,7 +719,7 @@ extension PanelController {
     /// From exitFull, before the window goes: back down into the corner's square. False when it cannot.
     func warpOutOfFull() -> Bool {
         stopGenie()
-        guard window.isVisible, let pic = GenieStage.picture(hosting, picScale) else { return false }
+        guard window.isVisible, let pic = GenieStage.picture(hosting) else { return false }
         return runGenie(pic, to: window.frame, neck: cornerIcon(), neckPic: nil, opening: false, ms: 480, showIcon: false, done: nil)
     }
 
@@ -797,7 +831,7 @@ extension PanelController {
         var layers: [GenieLayer] = []
         var said: String = "frame " + String(Int(at)) + " ms:"
         if window.isVisible && window.alphaValue > 0.01 {
-            if let p = GenieStage.picture(hosting, 2) {
+            if let p = GenieStage.picture(hosting) {
                 layers.append(GenieLayer(image: p, rect: window.frame, alpha: window.alphaValue))
                 said += " panel " + NSStringFromRect(window.frame)
             } else {
@@ -805,7 +839,7 @@ extension PanelController {
             }
         }
         if let w = fx.window, w.isVisible, let v = fx.view {
-            if let p = GenieStage.raw(v, 2) {
+            if let p = GenieStage.raw(v) {
                 layers.append(GenieLayer(image: p, rect: w.frame, alpha: 1))
                 said += " flying " + NSStringFromRect(w.frame)
             }
@@ -822,11 +856,11 @@ extension PanelController {
             for l in s { stage = stage.union(l.rect) }
         }
         if stage.isNull || stage.width < 2 || stage.height < 2 {
-            Store.log("no window was to be seen in any frame")
-            stage = CGRect(x: 0, y: 0, width: 300, height: 200)
+            Store.log("no window was to be seen in any frame: nothing written") // (the build then says "no render")
+            return
         }
         stage = stage.insetBy(dx: -10, dy: -10)
-        let q: CGFloat = min(2, 800 / stage.width) // wide frames (most of the screen) are drawn smaller
+        let q: CGFloat = min(1, 640 / stage.width) // wide frames (most of the screen) are drawn smaller
         let fw: Int = Int((stage.width * q).rounded())
         let fh: Int = Int((stage.height * q).rounded())
         let gapPx: Int = 8
@@ -932,31 +966,31 @@ struct GrowHeightKey: PreferenceKey {
 }
 
 /// Shows `k` of a part's height, from its top, fading with it: the part grows in from nothing, or folds away, and
-/// what is under it moves with it (SlideIn in Focus.cs). With k = 1 the part is as it would be without this.
+/// what is under it moves with it (SlideIn in Focus.cs). The part carries the space that follows it in its column
+/// (`gap`), so that grows with it too. With k = 1 it is the part and that space, as they would be without this.
 struct Grow: ViewModifier {
     let k: CGFloat
-    var gap: CGFloat = 0        // the space the column leaves after the part: it grows with it
+    var gap: CGFloat = 0
     var folding: Bool = false
     @State private var h: CGFloat = 0
 
     func body(content: Content) -> some View {
         let kk: CGFloat = max(0, min(1, k))
         let moving: Bool = kk < 1
-        let tall: CGFloat? = moving ? max(0, h * kk) : nil
+        let tall: CGFloat? = moving ? max(0, (h + gap) * kk) : nil
         let fade: Double = moving ? Grow.fade(Double(kk), folding) : 1
         let room: CGFloat = moving ? 0 : 40 // at rest the clip stands well clear, so nothing that reaches past the part is cut
-        let pull: CGFloat = moving ? -(1 - kk) * gap : 0
         return content
             .fixedSize(horizontal: false, vertical: true)
             .background(GeometryReader { g in Color.clear.preference(key: GrowHeightKey.self, value: g.size.height) })
             .onPreferenceChange(GrowHeightKey.self) { v in if abs(v - h) > 0.5 { h = v } }
             .transformPreference(GrowHeightKey.self) { $0 = 0 }
+            .padding(.bottom, gap)
             .frame(height: tall, alignment: .top)
             .opacity(fade)
             .padding(room)
             .clipped()
             .padding(-room)
-            .padding(.bottom, pull)
     }
 
     /// The height follows a quintic ease and the fade a cubic one, over nearly the same time: the fade, from the height.
