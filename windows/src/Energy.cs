@@ -58,6 +58,11 @@ namespace Corner
         public const double PeakBand = 0.40;        // a peak zone covers the top 40% of the peak-to-dip range
         public const double DipBand = 0.10;         // the dip zone covers the bottom 10% of it (about 1.5-2 h)
         public const double MinProminence = 0.03;   // a dip shallower than this is ignored
+
+        // --- what the check-ins may do to the times of the peaks and the dip (Reshape)
+        public const double TuneMoveMax = 90;       // minutes: the furthest a peak or the dip is moved, earlier or later. 0 = never moved, only lifted or lowered
+        public const double TuneMoveMin = 10;       // a move smaller than this is not made
+        public const double TuneApart = 30;         // minutes a peak and the dip are kept apart, at the least
         public const double MinDay = 10, MaxDay = 20; // plausible hours awake; outside this, bedtime = wake + 24 - need
 
         // --- naps
@@ -168,9 +173,9 @@ namespace Corner
                 plain[i] = Math.Max(0, Math.Min(1, rhythmPlain - PressureWeight * (sPlain - RestedPressure)));
                 e.Raw[i] = raw;
             }
-            // What the check-ins taught (Checks.cs) is added as one amount for each peak and for the dip, eased from one
-            // to the next. So a hump is lifted or lowered whole: it keeps its place and its even shape, and no check-in
-            // can put a bump of its own on a slope.
+            // What the check-ins taught (Checks.cs): each peak and the dip is lifted or lowered by one amount, eased from
+            // one to the next, and moved earlier or later to where the check-ins put it. A hump stays one even hump,
+            // and no check-in can put a bump of its own on a slope.
             var fit = Reshape(plain, correction, dt);
             for (int i = 0; i < nAll; i++)
             {
@@ -185,8 +190,12 @@ namespace Corner
             return e;
         }
 
-        /// The correction for every sample of the day: the learned amount at the start of the day, at each peak, at the
-        /// dip and at bedtime, eased between them (level at each, so the peaks and the dip stay where they are).
+        /// The correction for every sample of the day. The model's curve has five fixed points: the start of the day,
+        /// each peak, the dip and bedtime. Each peak and the dip is first moved to where the check-ins put it: the top
+        /// (or the bottom) of the curve with the correction read at every moment, looked for within TuneMoveMax of the
+        /// model's own. The stretches between the points are stretched or squeezed in time to fit, so the curve keeps
+        /// its shape. Then each point gets the height the check-ins give it, eased from one point to the next (level
+        /// at each, so the peaks and the dip sit exactly where they were put).
         static double[] Reshape(double[] plain, Func<double, double> correction, double dt)
         {
             int n = plain.Length;
@@ -194,15 +203,39 @@ namespace Corner
             if (correction == null || n < 3) return fit;
             int m1, dip, m2;
             Extremes(plain, out m1, out dip, out m2);
-            var at = new List<int> { 0 };
+            var from = new List<int> { 0 };
             foreach (int k in dip >= 0 ? new[] { m1, dip, m2, n - 1 } : new[] { m1, n - 1 })
-                if (k > at[at.Count - 1]) at.Add(k);
-            var amount = at.Select(k => correction(k * dt)).ToArray();
-            for (int j = 0; j + 1 < at.Count; j++)
-                for (int i = at[j]; i <= at[j + 1]; i++)
+                if (k > from[from.Count - 1]) from.Add(k);
+            var seen = new double[n]; // the curve as the check-ins see it, moment by moment (bumpy: only its tops and its bottom are used)
+            for (int i = 0; i < n; i++) seen[i] = plain[i] + correction(i * dt);
+
+            var to = new List<int>(from);
+            int reach = (int)Math.Round(TuneMoveMax / EnergyDay.StepMin), least = (int)Math.Round(TuneMoveMin / EnergyDay.StepMin), apart = Math.Max(1, (int)Math.Round(TuneApart / EnergyDay.StepMin));
+            if (dip >= 0 && from.Count == 5 && reach > 0)
+            {   // the usual day: a peak, the dip, a peak
+                for (int j = 1; j <= 3; j++)
                 {
-                    double x = (double)(i - at[j]) / (at[j + 1] - at[j]);
-                    fit[i] = amount[j] + (amount[j + 1] - amount[j]) * (1 - Math.Cos(Math.PI * x)) / 2;
+                    int best = from[j]; bool top = j != 2;
+                    for (int k = Math.Max(1, from[j] - reach); k <= Math.Min(n - 2, from[j] + reach); k++)
+                        if (top ? seen[k] > seen[best] + 1e-9 : seen[k] < seen[best] - 1e-9) best = k;
+                    to[j] = Math.Abs(best - from[j]) < least ? from[j] : best;
+                }
+                for (int j = 1; j <= 3; j++) to[j] = Math.Max(to[j], to[j - 1] + apart); // in order, and apart
+                for (int j = 3; j >= 1; j--) to[j] = Math.Min(to[j], to[j + 1] - apart);
+                for (int j = 1; j < 5; j++) if (to[j] <= to[j - 1]) { to = new List<int>(from); break; } // a day too short for that: nothing moves
+            }
+
+            // each point's height: what the check-ins see at its new place, against the model's height at its own
+            var amount = new double[from.Count];
+            for (int j = 0; j < from.Count; j++) amount[j] = seen[to[j]] - plain[from[j]];
+            for (int j = 0; j + 1 < from.Count; j++)
+                for (int i = to[j]; i <= to[j + 1]; i++)
+                {
+                    double x = (double)(i - to[j]) / (to[j + 1] - to[j]);
+                    double src = from[j] + x * (from[j + 1] - from[j]); // where on the model's curve this moment comes from
+                    int a = Math.Min(n - 2, (int)src);
+                    double moved = plain[a] + (plain[a + 1] - plain[a]) * (src - a);
+                    fit[i] = moved - plain[i] + amount[j] + (amount[j + 1] - amount[j]) * (1 - Math.Cos(Math.PI * x)) / 2;
                 }
             return fit;
         }

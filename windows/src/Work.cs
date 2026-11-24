@@ -28,6 +28,7 @@ namespace Corner
         public bool Routine;
         public int Planned;                           // the task's planned length, minutes
         public double E0 = -1, E1 = -1, Felt = -1;    // energy % at the start and the end, and a % typed in meanwhile; -1 = not known
+        public bool Ticked;                           // not from work.csv: a task ticked off with no timer (done.csv). It marks the day, and has no minutes
     }
 
     public static class WorkLog
@@ -126,22 +127,64 @@ namespace Corner
 
         public class Habit { public string Title, Effort, Kind; public int Minutes, Days; public bool Routine; }
 
+        /// The work log and, from done.csv, the tasks ticked off without a timer: ticking a task off is doing it too.
+        /// A tick is left out when the same task has timed work on the same day (that work already marks the day).
+        /// A tick from before work.csv existed that has timer minutes of its own keeps them.
+        public static List<WorkRow> WithDone(IEnumerable<WorkRow> work, IEnumerable<TaskLog.Row> done)
+        {
+            var all = new List<WorkRow>(work ?? new WorkRow[0]);
+            var timed = new HashSet<string>(all.Where(r => r.Minutes >= MinMinutes).Select(r => r.Id + "|" + SleepLog.Today(r.Start).ToString("yyyyMMdd")));
+            var inWork = new HashSet<string>(all.Select(r => r.Id));
+            foreach (var d in done ?? new TaskLog.Row[0])
+            {
+                if (timed.Contains(d.Id + "|" + d.Day.ToString("yyyyMMdd"))) continue;
+                var at = d.At.TimeOfDay.TotalHours < SleepLog.DayStartsAt ? d.At.AddDays(1) : d.At; // the small hours belong to the day before (done.csv)
+                bool had = d.TimerMinutes >= MinMinutes && !inWork.Contains(d.Id); // (a task in work.csv has its minutes there, on the days they were worked)
+                all.Add(new WorkRow
+                {
+                    Start = had ? at.AddMinutes(-d.TimerMinutes) : at, End = at, Minutes = had ? d.TimerMinutes : 0, Id = d.Id, Title = d.Title,
+                    Effort = string.IsNullOrEmpty(d.Effort) ? null : d.Effort, Kind = d.Kind, Routine = d.Routine, Planned = d.Minutes, Ended = "completed", Ticked = !had
+                });
+            }
+            return all;
+        }
+
+        static List<WorkRow> log; static int logWork = -1, logDone = -1;
+        /// What was worked on and what was ticked off, together. Made again only when one of the two logs has changed.
+        public static List<WorkRow> Log
+        {
+            get
+            {
+                if (log == null || logWork != WorkLog.Rows.Count || logDone != TaskLog.Changes)
+                {
+                    logWork = WorkLog.Rows.Count; logDone = TaskLog.Changes;
+                    log = WithDone(WorkLog.Rows, TaskLog.ReadDone());
+                }
+                return log;
+            }
+        }
+
+        /// The minutes a row stands for: its own, or for a tick with no timer the length the task was given.
+        static double Weight(WorkRow r) { return r.Ticked ? (r.Planned > 0 ? r.Planned : Planner.DefaultMinutes) : r.Minutes; }
+
         static IEnumerable<WorkRow> Window(IEnumerable<WorkRow> rows, int part, DateTime today)
         {
-            return rows.Where(r => r.Minutes >= MinMinutes && Part(r.Start) == part && r.Start.Date < today.Date && r.Start.Date >= today.Date.AddDays(-WindowDays));
+            return rows.Where(r => (r.Minutes >= MinMinutes || r.Ticked) && Part(r.Start) == part && r.Start.Date < today.Date && r.Start.Date >= today.Date.AddDays(-WindowDays));
         }
 
         /// The things usually done in this part of the day, most regular first. A habit's length is the middle one of
-        /// the minutes it really took on those days, to the nearest five.
+        /// the minutes it really took on the days it was timed, to the nearest five; never timed, it is the length it was given.
         public static List<Habit> Usual(IEnumerable<WorkRow> rows, int part, DateTime today)
         {
             var list = new List<Habit>();
             foreach (var g in Window(rows, part, today).GroupBy(r => Key(r.Title)))
             {
-                var days = g.GroupBy(r => r.Start.Date).Select(d => d.Sum(r => r.Minutes)).OrderBy(m => m).ToList();
+                var days = g.GroupBy(r => r.Start.Date).Select(d => d.Sum(r => r.Minutes)).ToList();
                 if (g.Key.Length == 0 || days.Count < MinDays) continue;
                 var last = g.OrderBy(r => r.Start).Last();
-                int mins = (int)Math.Max(5, Math.Round(days[days.Count / 2] / 5.0) * 5);
+                var timed = days.Where(m => m >= MinMinutes).OrderBy(m => m).ToList();
+                double mid = timed.Count > 0 ? timed[timed.Count / 2] : Weight(last);
+                int mins = (int)Math.Max(5, Math.Round(mid / 5.0) * 5);
                 list.Add(new Habit { Title = Regex.Replace(last.Title, @"\s*\(\d+/\d+\)\s*$", ""), Effort = last.Effort, Kind = last.Kind, Minutes = mins, Days = days.Count, Routine = last.Routine });
             }
             return list.OrderByDescending(h => h.Days).ThenBy(h => h.Title).ToList();
@@ -151,10 +194,10 @@ namespace Corner
         public static double TypeShare(IEnumerable<WorkRow> rows, int part, DateTime today, string effort, string kind)
         {
             var w = Window(rows, part, today).ToList();
-            double all = w.Sum(r => r.Minutes);
+            double all = w.Sum(r => Weight(r));
             if (all < 30) return 0; // too little to say
             bool phys = kind == "physical";
-            return w.Where(r => r.Effort == effort && (r.Kind == "physical") == phys).Sum(r => r.Minutes) / all;
+            return w.Where(r => r.Effort == effort && (r.Kind == "physical") == phys).Sum(r => Weight(r)) / all;
         }
     }
 
@@ -188,19 +231,20 @@ namespace Corner
             rows = rows ?? new List<WorkRow>();
             var usual = new HashSet<string>(Habits.Usual(rows, part, now).Select(h => Habits.Key(h.Title)));
             var zone = ZoneAt(e, now);
+            bool waking = e != null && now >= e.Wake && now < e.GroggyUntil; // the groggy stretch after waking: Plan keeps it for light work, and so does this
             var list = new List<Ranked>(); var at = new Dictionary<Ranked, int>(); int i = 0;
             foreach (var t in tasks)
             {
                 i++;
                 if (t.Done) continue;
-                var r = One(t, zone, now, level, rows, part, usual);
+                var r = One(t, zone, waking, now, level, rows, part, usual);
                 if (t.Id == working) { r.Score = 1000; r.Why = null; }
                 at[r] = i; list.Add(r);
             }
             return list.OrderBy(r => r.Later ? 1 : 0).ThenByDescending(r => r.Later ? 0 : r.Score).ThenBy(r => at[r]).ToList();
         }
 
-        static Ranked One(TaskItem t, Zone zone, DateTime now, double level, IList<WorkRow> rows, int part, HashSet<string> usual)
+        static Ranked One(TaskItem t, Zone zone, bool waking, DateTime now, double level, IList<WorkRow> rows, int part, HashSet<string> usual)
         {
             var r = new Ranked { Task = t };
             var due = t.DueAt;
@@ -216,6 +260,12 @@ namespace Corner
                 double h = now.TimeOfDay.TotalHours;
                 if (h >= Planner.PhysicalFrom && h < Planner.PhysicalTo) add(2.5, "good time for physical work");
             }
+            else if (waking)
+            {   // still waking up: something light first, and the hard thing waits for the peak (as Plan places them)
+                if (effort == "low") add(2, "easy start while you wake up");
+                else if (effort == "medium") add(0.5, null);
+                else if (effort == "high") add(-1, null);
+            }
             else
             {
                 double fit = 0;
@@ -225,7 +275,12 @@ namespace Corner
                 if (zone != null && fit >= 1.5)
                 {   // and does it fit in what is left of the peak or the dip?
                     double left = (zone.To - now).TotalMinutes;
-                    if (mins <= left + 5) add(1, null); else if (mins > left + 15) add(-1, null);
+                    if (mins <= left + 5) add(1, null);
+                    else if (mins > left + 15)
+                    {   // it runs well past the end: still the best time for it, but the reason says how long the peak lasts
+                        add(-1, null);
+                        if (peak && why == "fits your peak") why = "your peak lasts until " + EnergyDay.Clock(zone.To);
+                    }
                 }
                 if (level >= 0 && level < LowLevel) { if (effort == "low") add(1.5, "low energy now"); else if (effort == "high") add(-1.5, null); }
                 if (level > HighLevel && effort == "high") add(1, "high energy now");
@@ -254,12 +309,14 @@ namespace Corner
     partial class Shell
     {
         const double AwayIdleSec = 600; // no key or mouse for this long pauses the task being worked on
+        const double TickGapSec = 90;   // the once-a-second tick missing for this long: the PC was asleep, and the work stopped when it was last seen
 
         static bool PriorityMode { get { return Settings.Get("PlanBy", 0) > 0.5; } }
         bool ShowWatch { get { return Settings.Get("Stopwatch", 1) > 0.5; } }
 
         string workId;          // the task whose stretch of work is open
         DateTime workStart;
+        DateTime workSeen;      // the last second the open stretch was seen going on (WorkAwake)
         double workE0 = -1, workFelt = -1;
         string workWhy;         // why the open stretch is about to end, when the code that ends it knows
         Dictionary<string, string> rankWhy = new Dictionary<string, string>(); // from the last ordering: task id -> why
@@ -269,8 +326,9 @@ namespace Corner
             Application.Current.Exit += (s, e) => { if (workId != null) { WorkEnd("closed", DateTime.Now); Save(); } };
             try
             {
-                Microsoft.Win32.SystemEvents.SessionSwitch += (s, e) => { if (e.Reason == Microsoft.Win32.SessionSwitchReason.SessionLock) Dispatcher.BeginInvoke(new Action(() => AutoPause(DateTime.Now))); };
-                Microsoft.Win32.SystemEvents.PowerModeChanged += (s, e) => { if (e.Mode == Microsoft.Win32.PowerModes.Suspend) Dispatcher.BeginInvoke(new Action(() => AutoPause(DateTime.Now))); };
+                // (the time is read as the event arrives: by the time the window's thread gets to it, the PC may have slept and woken)
+                Microsoft.Win32.SystemEvents.SessionSwitch += (s, e) => { if (e.Reason == Microsoft.Win32.SessionSwitchReason.SessionLock) { var at = DateTime.Now; Dispatcher.BeginInvoke(new Action(() => AutoPause(at))); } };
+                Microsoft.Win32.SystemEvents.PowerModeChanged += (s, e) => { if (e.Mode == Microsoft.Win32.PowerModes.Suspend) { var at = DateTime.Now; Dispatcher.BeginInvoke(new Action(() => AutoPause(at))); } };
             }
             catch (Exception ex) { Store.Log(ex); }
         }
@@ -292,7 +350,7 @@ namespace Corner
             if (want == workId) { workWhy = null; return; }
             if (workId != null) WorkEnd(workWhy ?? (want != null ? "switched" : "paused"), DateTime.Now);
             workWhy = null;
-            if (want != null) { workId = want; workStart = DateTime.Now; workE0 = EnergyPct(Now()); workFelt = -1; }
+            if (want != null) { workId = want; workStart = workSeen = DateTime.Now; workE0 = EnergyPct(Now()); workFelt = -1; }
         }
 
         WorkRow RowFor(TaskItem t, DateTime start, DateTime end, string ended)
@@ -335,11 +393,23 @@ namespace Corner
         void AutoPause(DateTime end)
         {
             if (workId == null) return;
+            if (end < workStart) end = workStart;
             WorkEnd("away", end);
             if (PriorityMode) { timerRunning = false; timerLeft = 0; ResortData(); } // (the task stays in hand, paused: Focus.cs TimerClick)
-            else { timerLeft = Math.Max(0, TimerSeconds()); timerRunning = false; }
+            else { timerLeft = Math.Max(0, (timerEnd - end).TotalSeconds); timerRunning = false; } // the countdown stops where it stood when you left
             Save();
             if (shown) { Rebuild(); RepaintTimers(); DrawFocus(); }
+        }
+
+        /// Once a second, before the timer is looked at (Focus.cs). The PC can go to sleep or hibernate without Corner
+        /// being told in time; the ticks then simply stop. A long gap between two ticks means the work ended at the
+        /// last one, so a night's sleep is never logged as work and never runs a countdown out.
+        void WorkAwake()
+        {
+            if (workId == null) return;
+            var now = DateTime.Now;
+            if ((now - workSeen).TotalSeconds > TickGapSec && workSeen >= workStart) { AutoPause(workSeen); return; }
+            workSeen = now;
         }
 
         /// Once a second (Focus.cs).
@@ -360,7 +430,7 @@ namespace Corner
         List<Ranked> RankNow()
         {
             var now = Now(); double pct = EnergyPct(now);
-            return Priority.Rank(data.Tasks, energy, now, pct < 0 ? -1 : pct / 100, WorkLog.Rows, timerId); // the task in hand stays first, running or paused
+            return Priority.Rank(data.Tasks, energy, now, pct < 0 ? -1 : pct / 100, Habits.Log, timerId); // the task in hand stays first, running or paused
         }
 
         /// Priority mode: puts the open tasks in the order to do them now. Only the data; the caller redraws.
@@ -467,17 +537,18 @@ namespace Corner
 
         Border addPill;      // the box you type a task into
         WrapPanel habitRow;  // and, under it, what you usually do at this time of day
-        List<Habits.Habit> habitCache; int habitRows = -1, habitPart = -1; DateTime habitDay;
+        List<Habits.Habit> habitCache; List<WorkRow> habitLog; int habitPart = -1; DateTime habitDay;
 
         /// From Rebuild. The things the log says you usually do in this part of the day and that are not in the list yet.
         void DrawHabits()
         {
             if (habitRow == null || data == null) return;
             var now = Now(); int part = Habits.Part(now);
-            if (habitCache == null || habitRows != WorkLog.Rows.Count || habitPart != part || habitDay != now.Date)
+            var logNow = Habits.Log; // timed work and ticked-off tasks; a new list whenever either log has changed
+            if (habitCache == null || habitLog != logNow || habitPart != part || habitDay != now.Date)
             {
-                habitCache = Habits.Usual(WorkLog.Rows, part, now);
-                habitRows = WorkLog.Rows.Count; habitPart = part; habitDay = now.Date;
+                habitCache = Habits.Usual(logNow, part, now);
+                habitLog = logNow; habitPart = part; habitDay = now.Date;
             }
             habitRow.Children.Clear();
             var have = new HashSet<string>(data.Tasks.Select(t => Habits.Key(t.Title)));
@@ -537,6 +608,11 @@ namespace Corner
                 if (step == "sort") { ResortData(); Rebuild(); DrawFocus(); }
                 if (step == "work" || step == "over") { StartTimer(Upcoming()[0]); workStart = workStart.AddSeconds(step == "over" ? -4000 : -754); Rebuild(); RepaintTimers(); DrawFocus(); }
                 if (step == "pause") { TimerClick(Upcoming()[0]); }
+                if (step == "slept")
+                {   // started 1000 s ago, last seen going on 400 s in, then no tick until now: the PC was asleep (WorkAwake)
+                    StartTimer(Upcoming()[0]); workStart = workStart.AddSeconds(-1000); if (!PriorityMode) timerEnd = timerEnd.AddSeconds(-1000);
+                    workSeen = workStart.AddSeconds(400); WorkAwake(); Rebuild(); RepaintTimers(); DrawFocus();
+                }
                 if (step == "plan") { SetTab(1); MakePlan(); }
                 if (step == "apply") { MakePlan(); if (PriorityMode) ApplyOrder(); else ApplyPlan(); SetTab(0); }
                 if (step == "settings") After(1200, ToggleSettings); // (after Full Mode has opened)

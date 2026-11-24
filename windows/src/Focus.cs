@@ -43,7 +43,7 @@ namespace Corner
             allOpen = Settings.Get("AllOpen", 0) > 0.5;
 
             var ticker = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-            ticker.Tick += (s, e) => { CountTimer(); TimerTick(); WorkTick(); }; // CountTimer: minutes on each task, for done.csv (Stats.cs); WorkTick: work.csv (Work.cs)
+            ticker.Tick += (s, e) => { WorkAwake(); CountTimer(); TimerTick(); WorkTick(); }; // WorkAwake: the PC slept meanwhile? CountTimer: minutes on each task, for done.csv (Stats.cs); WorkTick: work.csv (Work.cs)
             ticker.Start();
             InitWork();
         }

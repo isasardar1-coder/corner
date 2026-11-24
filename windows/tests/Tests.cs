@@ -209,6 +209,42 @@ namespace CornerTests
                 Check("   tuned curve keeps peak, dip (12:30-16:30) and second peak", e.Peak1 != null && e.Dip != null && e.Peak2 != null && e.Dip.From.TimeOfDay.TotalHours >= 12.5 && e.Dip.To.TimeOfDay.TotalHours <= 16.5 && e.Peak1.To <= e.Dip.From && e.Dip.To <= e.Peak2.From);
             }
 
+            // the check-ins may also move a peak or the dip in time (EnergyModel.Reshape), by 90 minutes at the most
+            Console.WriteLine("  -- check-ins that put the afternoon top earlier");
+            {
+                var tmNights = Repeat(T(23, 0), T(7, 0), 14, day);
+                Func<EnergyDay, int, int, int> tmTop = (tmE, tmA, tmB) => { int tmK = tmA; for (int tmI = tmA; tmI <= tmB; tmI++) if (tmE.Samples[tmI] > tmE.Samples[tmK]) tmK = tmI; return tmK; };
+                Func<EnergyDay, int> tmLow = tmE => { int tmK = 24; for (int tmI = 24; tmI < tmE.Samples.Length - 24; tmI++) if (tmE.Samples[tmI] < tmE.Samples[tmK]) tmK = tmI; return tmK; };
+                Func<EnergyDay, int, int, int> tmHumps = (tmE, tmA, tmB) => { int tmC = 0; for (int tmI = tmA + 1; tmI < tmB; tmI++) if (tmE.Samples[tmI] > tmE.Samples[tmI - 1] + 1e-12 && tmE.Samples[tmI] >= tmE.Samples[tmI + 1]) tmC++; return tmC; };
+                Func<EnergyDay, double> tmStep = tmE => Enumerable.Range(1, tmE.Samples.Length - 1).Max(tmI => Math.Abs(tmE.Samples[tmI] - tmE.Samples[tmI - 1]));
+                int tmEnd = normal.Samples.Length - 1, tmDip0 = tmLow(normal), tmTop0 = tmTop(normal, tmDip0, tmEnd);
+
+                Func<double, double> tmEarly = t => 0.08 * Math.Exp(-(t - 9.5) * (t - 9.5) / 3) - 0.10 * Math.Exp(-(t - 13) * (t - 13) / 3);
+                var tmE1 = EnergyModel.Build(tmNights, need, day, tmEarly);
+                Describe("fresher at 16:30, flatter at 20:00   ", tmE1);
+                int tmDip1 = tmLow(tmE1), tmTop1 = tmTop(tmE1, tmDip1, tmEnd);
+                double tmMoved = (tmTop1 - tmTop0) * 5;
+                Check("the afternoon top moves earlier, by 90 minutes at the most", tmMoved <= -15 && tmMoved >= -90, C(normal.TimeAt(tmTop0)) + " -> " + C(tmE1.TimeAt(tmTop1)));
+                Check("...and its peak zone starts earlier with it", tmE1.Peak2 != null && tmE1.Peak2.From < normal.Peak2.From, Z(normal.Peak2) + " -> " + Z(tmE1.Peak2));
+                Check("...its height is what the check-ins say for that moment", Math.Abs(tmE1.Samples[tmTop1] - (normal.Samples[tmTop1] + tmEarly(tmTop1 * 5 / 60.0))) < 1e-9, tmE1.Samples[tmTop1].ToString("0.000"));
+                Check("the curve stays one even hump on each side of the dip, with no jump", tmHumps(tmE1, 0, tmDip1) == 1 && tmHumps(tmE1, tmDip1, tmEnd) == 1 && tmStep(tmE1) <= tmStep(normal) * 1.5 + 0.003,
+                    tmHumps(tmE1, 0, tmDip1) + " + " + tmHumps(tmE1, tmDip1, tmEnd) + " humps, largest step " + tmStep(tmE1).ToString("0.000") + " (plain " + tmStep(normal).ToString("0.000") + ")");
+                Check("zones stay in order: peak, dip, peak", tmE1.Peak1 != null && tmE1.Dip != null && tmE1.Peak1.To <= tmE1.Dip.From && tmE1.Dip.To <= tmE1.Peak2.From);
+
+                var tmE2 = EnergyModel.Build(tmNights, need, day, t => 0.05);
+                Check("check-ins that only say \"higher all day\" move nothing in time", Z(tmE2.Peak1) == Z(normal.Peak1) && Z(tmE2.Dip) == Z(normal.Dip) && Z(tmE2.Peak2) == Z(normal.Peak2) && tmTop(tmE2, tmDip0, tmEnd) == tmTop0, Z(tmE2.Peak1) + " / " + Z(tmE2.Dip) + " / " + Z(tmE2.Peak2));
+                Check("...and lift the whole curve by that much", Enumerable.Range(0, tmEnd + 1).All(tmI => Math.Abs(tmE2.Samples[tmI] - normal.Samples[tmI] - 0.05) < 1e-9));
+
+                // scores that tilt the afternoon hump hard towards its start (the dip is left alone): read moment by moment,
+                // the best of the afternoon is more than three hours before the model's top
+                var tmE3 = EnergyModel.Build(tmNights, need, day, t => t < 8 ? 0 : Math.Max(-0.15, Math.Min(0.15, -0.06 * (t - 10.5))));
+                int tmDip3 = tmE3.Dip == null ? tmDip0 : (int)Math.Round((tmE3.Dip.From - tmE3.Wake).TotalMinutes / 5); // (the evening ends lower than the dip here, so the dip is taken from its zone)
+                int tmTop3 = tmTop(tmE3, tmDip3, tmEnd);
+                Check("check-ins asking for a move of hours: the top goes 90 minutes and no further", (tmTop0 - tmTop3) * 5 == 90 && tmE3.Dip != null && tmE3.Peak2 != null && tmE3.Dip.To <= tmE3.Peak2.From && tmHumps(tmE3, tmDip3, tmEnd) == 1,
+                    C(normal.TimeAt(tmTop0)) + " -> " + C(tmE3.TimeAt(tmTop3)) + ", zones " + Z(tmE3.Dip) + " / " + Z(tmE3.Peak2));
+                Check("the untuned figure kept with each check-in does not move with the tuning", Enumerable.Range(0, tmEnd + 1).All(tmI => tmE1.Raw[tmI] == normal.Raw[tmI]));
+            }
+
             // ------------------------------------------------------------------ 2. debt
             Console.WriteLine("== 2. Sleep debt");
             SleepLog.Load();
@@ -569,6 +605,34 @@ namespace CornerTests
             Check("no curve and a low counter: the low-effort task first", pwTired[0].Task.Title == "Easy" && pwTired[0].Why == "low energy now", pwNames(pwTired));
             Check("same input, same order (ties keep the list's order)", pwNames(Priority.Rank(pwTasks, normal, pwPeak, 0.6, null, null)) == pwNames(pwOnPeak)
                 && pwNames(Priority.Rank(new List<TaskItem> { pwT("A", null, 0), pwT("B", null, 0), pwT("C", null, 0) }, normal, pwPeak, 0.6, null, null)) == "A > B > C");
+
+            // ticking a task off counts as doing it, timer or not (Habits.WithDone); and the groggy stretch after waking
+            Func<string, int, double, double, TaskLog.Row> hcD = (title, daysAgo, hour, timer) =>
+                new TaskLog.Row { Day = SleepLog.Today(day.AddDays(-daysAgo).AddHours(hour)), At = SleepLog.Today(day.AddDays(-daysAgo).AddHours(hour)) + day.AddDays(-daysAgo).AddHours(hour).TimeOfDay, // (as ReadDone gives it: Corner's day and the clock time)
+                    Id = title + daysAgo, Title = title, Effort = "medium", Kind = "mental", Minutes = 30, TimerMinutes = timer };
+            var hcDone = new List<TaskLog.Row> { hcD("Voice-over", 1, 10, 0), hcD("Voice-over", 2, 11, 0), hcD("Voice-over", 3, 9.5, 0), hcD("Emails", 1, 8.4, 0), hcD("Gym", 2, 9, 0) };
+            var hcLog = Habits.WithDone(pwLog, hcDone);
+            var hcUsual = Habits.Usual(hcLog, 0, day.AddHours(9));
+            Check("ticked off on 3 mornings with no timer: usual for the morning, at the length it was given",
+                hcUsual.Any(hcH => hcH.Title == "Voice-over" && hcH.Days == 3 && hcH.Minutes == 30), string.Join(", ", hcUsual.Select(hcH => hcH.Title + " x" + hcH.Days + " " + hcH.Minutes + "m")));
+            Check("a tick on a day the task was also timed is not counted twice (Emails stays at 3 days, 20 min)",
+                hcUsual.Any(hcH => hcH.Title == "Emails" && hcH.Days == 3 && hcH.Minutes == 20) && hcLog.Count == pwLog.Count + 4, hcLog.Count + " rows from " + pwLog.Count + " + " + hcDone.Count);
+            Check("timed on two mornings and ticked on a third: usual, at the length it really took (Gym, 50 min)", hcUsual.Any(hcH => hcH.Title == "Gym" && hcH.Days == 3 && hcH.Minutes == 50));
+            var hcOld = Habits.WithDone(new List<WorkRow>(), new List<TaskLog.Row> { hcD("Sketch", 1, 10, 18), hcD("Sketch", 2, 10, 22), hcD("Sketch", 3, 10, 41) });
+            Check("ticks from before work.csv keep their own timer minutes (18, 22, 41 -> 20)", Habits.Usual(hcOld, 0, day.AddHours(9)).Any(hcH => hcH.Title == "Sketch" && hcH.Minutes == 20));
+            var hcNight = Habits.WithDone(new List<WorkRow>(), new List<TaskLog.Row> { hcD("Late thing", 1, 25.5, 0) });
+            Check("a tick at 01:30 stands on the night it happened, in the evening part", hcNight[0].Start == day.AddHours(1.5) && Habits.Part(hcNight[0].Start) == 3, hcNight[0].Start.ToString("s"));
+            Check("ticked-off work counts in the share of the morning by effort", Habits.TypeShare(hcLog, 0, day.AddHours(9), "medium", "mental") > 0.3, Habits.TypeShare(hcLog, 0, day.AddHours(9), "medium", "mental").ToString("0.00"));
+
+            var hcWake = normal.Wake.AddMinutes(20);
+            var hcGroggy = Priority.Rank(pwTasks, normal, hcWake, 0.9, null, null);
+            Check("still waking up (" + C(hcWake) + ", groggy until " + C(normal.GroggyUntil) + "): the low-effort task first, the high-effort one last, even with a high counter",
+                hcGroggy[0].Task.Title == "Tidy desk" && hcGroggy[0].Why == "easy start while you wake up" && hcGroggy.Last().Task.Title == "Write concept", pwNames(hcGroggy));
+            var hcAfter = Priority.Rank(pwTasks, normal, normal.GroggyUntil.AddMinutes(10), 0.9, null, null);
+            Check("once the groggy stretch is over: the high-effort task first again", hcAfter[0].Task.Title == "Write concept", pwNames(hcAfter));
+            var hcEnd = Priority.Rank(new List<TaskItem> { pwT("Long write", "high", 90), pwT("Tidy desk", "low", 15) }, normal, normal.Peak1.To.AddMinutes(-5), 0.6, null, null);
+            Check("a 90-minute high task 5 minutes before the peak ends: still first, and the reason says when the peak ends",
+                hcEnd[0].Task.Title == "Long write" && hcEnd[0].Why == "your peak lasts until " + EnergyDay.Clock(normal.Peak1.To), hcEnd[0].Why);
 
             Console.WriteLine(fails == 0 ? "ALL PASS" : fails + " FAILED");
         }

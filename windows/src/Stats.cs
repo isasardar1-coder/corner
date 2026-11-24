@@ -33,6 +33,9 @@ namespace Corner
 
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
+        /// Goes up each time done.csv is written, so what is worked out from it (Habits.Log in Work.cs) knows to read it again.
+        public static int Changes;
+
         static string Csv(string s)
         {
             s = s ?? "";
@@ -79,6 +82,7 @@ namespace Corner
                 timerMinutes > 0 ? Math.Round(timerMinutes, 1).ToString(Inv) : "", zone ?? ""
             };
             Append(DoneFile, DoneHead, string.Join(",", p));
+            Changes++;
         }
 
         /// A task was unticked: its row for `day` comes out again, so the record only holds what stayed done.
@@ -93,6 +97,7 @@ namespace Corner
                 if (at <= 0) return;
                 lines.RemoveAt(at);
                 IO.File.WriteAllLines(DoneFile, lines, new UTF8Encoding(true));
+                Changes++;
             }
             catch (Exception ex) { Store.Log(ex); }
         }
@@ -206,6 +211,8 @@ namespace Corner
         {
             var now = Now();
             double s; timerSecs.TryGetValue(t.Id, out s);
+            double worked = Elapsed(t); // the time worked on it, kept in tasks.json: it outlasts a restart of Corner, which the count above does not (Work.cs)
+            if (worked > 0) s = worked;
             TaskLog.Done(t, now, SleepLog.Today(now), s / 60, ZoneName(now));
         }
 
