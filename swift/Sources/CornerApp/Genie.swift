@@ -596,7 +596,8 @@ extension PanelController {
             x = max(vf.minX - shadowM, min(vf.maxX - w + shadowM, CGFloat(Settings.get("MacFullX", Double(x)))))
             top = max(vf.minY + 260, min(vf.maxY + shadowM, CGFloat(Settings.get("MacFullTop", Double(top)))))
         }
-        let tallest: CGFloat = max(300 * s, vf.height - 40) + 2 * shadowM
+        // (the card may come out a little taller than the tallest it is meant to be: some room to spare)
+        let tallest: CGFloat = max(300 * s, vf.height - 40) + 2 * shadowM + 48
         return CGRect(x: x, y: top - tallest, width: w, height: tallest)
     }
 
@@ -767,12 +768,16 @@ extension PanelController {
         if !model.full || !model.shown || fx.leaving { return }
         place(animated: false)
         var ok = false
+        let before: CGRect = fx.window?.frame ?? CGRect.zero
         if let pic = GenieStage.picture(hosting) {
             let neck: CGRect = fx.miniPic != nil ? fx.miniRect : cornerIcon()
             ok = runGenie(pic, to: window.frame, neck: neck, neckPic: fx.miniPic, opening: true, ms: 600, showIcon: false,
                           reach: fx.miniPic != nil ? fx.reach : CGRect.null, done: { [weak self] in self?.window.alphaValue = 1 })
         }
-        if model.demoRun { Store.log("warp into full: " + (ok ? "flying" : "no picture") + " window " + NSStringFromRect(window.frame) + " picture " + GenieStage.note) }
+        if model.demoRun {
+            Store.log("warp into full: " + (ok ? "flying" : "no picture") + " window " + NSStringFromRect(window.frame) + " picture " + GenieStage.note
+                      + "; see-through window " + NSStringFromRect(before) + " then " + NSStringFromRect(fx.window?.frame ?? CGRect.zero))
+        }
         fx.miniPic = nil
         if !ok {
             stopGenie()
