@@ -23,6 +23,7 @@ public final class WorkRow {
     public var e0: Double          // energy % at the start; -1 = not known
     public var e1: Double          // energy % at the end; -1 = not known
     public var felt: Double        // a % typed in meanwhile; -1 = not known
+    public var ticked: Bool = false // not from work.csv: a task ticked off with no timer (done.csv). It marks the day, and has no minutes
 
     public init(start: Date = Date.distantPast, end: Date = Date.distantPast, minutes: Double = 0, id: String = "", title: String = "",
                 effort: String? = nil, kind: String? = nil, ended: String = "", routine: Bool = false, planned: Int = 0,
@@ -197,11 +198,63 @@ public enum Habits {
         }
     }
 
+    /// The work log and, from done.csv, the tasks ticked off without a timer: ticking a task off is doing it too.
+    /// A tick is left out when the same task has timed work on the same day (that work already marks the day).
+    /// A tick from before work.csv existed that has timer minutes of its own keeps them.
+    public static func withDone(_ work: [WorkRow]?, _ done: [TaskLog.Row]?) -> [WorkRow] {
+        var all: [WorkRow] = work ?? []
+        var timed = Set<String>()
+        var inWork = Set<String>()
+        for r in all {
+            inWork.insert(r.id)
+            if r.minutes >= minMinutes { timed.insert(r.id + "|" + CornerTime.formatDay(SleepLog.today(r.start))) }
+        }
+        for d in done ?? [] {
+            if timed.contains(d.id + "|" + CornerTime.formatDay(d.day)) { continue }
+            // the small hours belong to the day before (done.csv)
+            let small: Bool = d.at.timeOfDay / 3600 < Double(SleepLog.dayStartsAt)
+            let at: Date = small ? d.at.addingDays(1) : d.at
+            // (a task in work.csv has its minutes there, on the days they were worked)
+            let had: Bool = d.timerMinutes >= minMinutes && !inWork.contains(d.id)
+            let start: Date = had ? at.addingMinutes(-d.timerMinutes) : at
+            let r = WorkRow(start: start, end: at, minutes: had ? d.timerMinutes : 0, id: d.id, title: d.title)
+            r.effort = d.effort.isEmpty ? nil : d.effort
+            r.kind = d.kind
+            r.routine = d.routine
+            r.planned = d.minutes
+            r.ended = "completed"
+            r.ticked = !had
+            all.append(r)
+        }
+        return all
+    }
+
+    static var logCache: [WorkRow]? = nil
+    static var logWork = -1
+    static var logDone = -1
+
+    /// What was worked on and what was ticked off, together. Made again only when one of the two logs has changed.
+    public static var log: [WorkRow] {
+        let work: [WorkRow] = WorkLog.rows
+        if let c = logCache, logWork == work.count, logDone == TaskLog.changes { return c }
+        logWork = work.count
+        logDone = TaskLog.changes
+        let made: [WorkRow] = withDone(work, TaskLog.readDone())
+        logCache = made
+        return made
+    }
+
+    /// The minutes a row stands for: its own, or for a tick with no timer the length the task was given.
+    static func weight(_ r: WorkRow) -> Double {
+        if r.ticked { return Double(r.planned > 0 ? r.planned : Planner.defaultMinutes) }
+        return r.minutes
+    }
+
     static func window(_ rows: [WorkRow], _ part: Int, _ today: Date) -> [WorkRow] {
         let last: Date = today.dateOnly
         let first: Date = last.addingDays(-windowDays)
         return rows.filter { r in
-            if r.minutes < minMinutes { return false }
+            if r.minutes < minMinutes && !r.ticked { return false }
             if Habits.part(r.start) != part { return false }
             let d: Date = r.start.dateOnly
             return d < last && d >= first
@@ -209,7 +262,7 @@ public enum Habits {
     }
 
     /// The things usually done in this part of the day, most regular first. A habit's length is the middle one of
-    /// the minutes it really took on those days, to the nearest five.
+    /// the minutes it really took on the days it was timed, to the nearest five; never timed, it is the length it was given.
     public static func usual(_ rows: [WorkRow], _ part: Int, _ today: Date) -> [Habit] {
         // grouped by key, in the order the keys first appear
         var keys: [String] = []
@@ -236,7 +289,8 @@ public enum Habits {
             if days.count < minDays { continue }
             var last: WorkRow = g[0]
             for r in g where r.start >= last.start { last = r }
-            let middle: Double = days[days.count / 2]
+            let timedDays: [Double] = days.filter { $0 >= minMinutes }
+            let middle: Double = timedDays.isEmpty ? weight(last) : timedDays[timedDays.count / 2]
             let mins: Int = Int(max(5, NetFormat.round(middle / 5.0) * 5))
             list.append(Habit(title: partTailRx.replaceAll(last.title, ""), effort: last.effort, kind: last.kind,
                               minutes: mins, days: days.count, routine: last.routine))
@@ -258,11 +312,11 @@ public enum Habits {
     public static func typeShare(_ rows: [WorkRow], _ part: Int, _ today: Date, effort: String?, kind: String?) -> Double {
         let w: [WorkRow] = window(rows, part, today)
         var all = 0.0
-        for r in w { all += r.minutes }
+        for r in w { all += weight(r) }
         if all < 30 { return 0 } // too little to say
         let phys: Bool = kind == "physical"
         var same = 0.0
-        for r in w where r.effort == effort && (r.kind == "physical") == phys { same += r.minutes }
+        for r in w where r.effort == effort && (r.kind == "physical") == phys { same += weight(r) }
         return same / all
     }
 }
@@ -302,10 +356,13 @@ public enum Priority {
         var usual = Set<String>()
         for h in Habits.usual(log, part, now) { usual.insert(Habits.key(h.title)) }
         let zone: Zone? = zoneAt(e, now)
+        // the groggy stretch after waking: Plan keeps it for light work, and so does this
+        var waking = false
+        if let day = e { waking = now >= day.wake && now < day.groggyUntil }
         var list: [Ranked] = []
         for t in tasks {
             if t.done { continue }
-            let r: Ranked = one(t, zone, now, level, log, part, usual)
+            let r: Ranked = one(t, zone, waking, now, level, log, part, usual)
             if let w = working, t.id == w {
                 r.score = 1000
                 r.why = nil
@@ -321,7 +378,7 @@ public enum Priority {
         }
     }
 
-    static func one(_ t: TaskItem, _ zone: Zone?, _ now: Date, _ level: Double, _ rows: [WorkRow], _ part: Int, _ usual: Set<String>) -> Ranked {
+    static func one(_ t: TaskItem, _ zone: Zone?, _ waking: Bool, _ now: Date, _ level: Double, _ rows: [WorkRow], _ part: Int, _ usual: Set<String>) -> Ranked {
         let r = Ranked(task: t)
         let due: Date? = t.dueAt
         if let d = due, d.dateOnly > now.dateOnly {
@@ -351,6 +408,15 @@ public enum Priority {
             // physical work has its own time of day, whatever the curve is doing
             let h: Double = now.timeOfDay / 3600
             if h >= Planner.physicalFrom && h < Planner.physicalTo { add(2.5, "good time for physical work") }
+        } else if waking {
+            // still waking up: something light first, and the hard thing waits for the peak (as Plan places them)
+            if effort == "low" {
+                add(2, "easy start while you wake up")
+            } else if effort == "medium" {
+                add(0.5, nil)
+            } else if effort == "high" {
+                add(-1, nil)
+            }
         } else {
             var fit = 0.0
             if effort == "high" {
@@ -369,7 +435,9 @@ public enum Priority {
                 if Double(mins) <= left + 5 {
                     add(1, nil)
                 } else if Double(mins) > left + 15 {
+                    // it runs well past the end: still the best time for it, but the reason says how long the peak lasts
                     add(-1, nil)
+                    if peak && why == "fits your peak" { why = "your peak lasts until " + EnergyDay.clock(z.to) }
                 }
             }
             if level >= 0 && level < lowLevel {

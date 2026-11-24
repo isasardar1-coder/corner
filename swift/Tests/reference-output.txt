@@ -36,14 +36,25 @@
   23:00-09:00   : wake 09:00 bed 23:00 groggy<10:05 peak1 10:05-11:55 dip 13:55-15:50 peak2 17:45-21:30 debt 0.00h  E@10=0.648 E@14.5=0.465 E@19=0.615
   PASS     zones present and ordered
   -- with a tuning correction added to the curve
-  early lift, then low (0.5h +, 1.6h -): wake 07:00 bed 23:00 groggy<08:05 peak1 08:05-11:05 dip 13:30-15:45 peak2 17:45-21:35 debt 0.00h  E@10=0.559 E@14.5=0.410 E@19=0.572
+  early lift, then low (0.5h +, 1.6h -): wake 07:00 bed 23:00 groggy<08:05 peak1 08:05-11:55 dip 13:50-15:45 peak2 17:45-21:35 debt 0.00h  E@10=0.607 E@14.5=0.411 E@19=0.572
   PASS     tuned curve keeps peak, dip (12:30-16:30) and second peak
-  sharper morning, flatter evening    : wake 07:00 bed 23:00 groggy<08:05 peak1 08:05-11:30 dip 14:05-15:45 peak2 17:45-21:45 debt 0.00h  E@10=0.737 E@14.5=0.411 E@19=0.533
+  sharper morning, flatter evening    : wake 07:00 bed 23:00 groggy<08:05 peak1 08:05-11:30 dip 14:00-15:55 peak2 18:05-21:55 debt 0.00h  E@10=0.737 E@14.5=0.411 E@19=0.538
   PASS     tuned curve keeps peak, dip (12:30-16:30) and second peak
-  late-evening bump (15h +)           : wake 07:00 bed 23:00 groggy<08:05 peak1 08:05-11:25 dip 13:50-15:45 peak2 17:45-22:15 debt 0.00h  E@10=0.623 E@14.5=0.410 E@19=0.536
+  late-evening bump (15h +)           : wake 07:00 bed 23:00 groggy<08:05 peak1 08:05-11:25 dip 13:45-16:05 peak2 18:35-22:30 debt 0.00h  E@10=0.623 E@14.5=0.410 E@19=0.524
   PASS     tuned curve keeps peak, dip (12:30-16:30) and second peak
-  ripple                              : wake 07:00 bed 23:00 groggy<08:05 peak1 08:05-11:25 dip 13:45-15:45 peak2 17:45-22:10 debt 0.00h  E@10=0.581 E@14.5=0.398 E@19=0.545
+  ripple                              : wake 07:00 bed 23:00 groggy<08:05 peak1 08:05-11:50 dip 13:30-15:30 peak2 17:55-22:15 debt 0.00h  E@10=0.665 E@14.5=0.365 E@19=0.577
   PASS     tuned curve keeps peak, dip (12:30-16:30) and second peak
+  -- check-ins that put the afternoon top earlier
+  fresher at 16:30, flatter at 20:00   : wake 07:00 bed 23:00 groggy<08:05 peak1 08:05-11:10 dip 13:25-15:00 peak2 16:40-21:00 debt 0.00h  E@10=0.621 E@14.5=0.430 E@19=0.532
+  PASS  the afternoon top moves earlier, by 90 minutes at the most   [19:50 -> 18:20]
+  PASS  ...and its peak zone starts earlier with it   [17:45-21:35 -> 16:40-21:00]
+  PASS  ...its height is what the check-ins say for that moment   [0.534]
+  PASS  the curve stays one even hump on each side of the dip, with no jump   [1 + 1 humps, largest step 0.036 (plain 0.036)]
+  PASS  zones stay in order: peak, dip, peak
+  PASS  check-ins that only say "higher all day" move nothing in time   [08:05-11:25 / 13:45-15:45 / 17:45-21:35]
+  PASS  ...and lift the whole curve by that much
+  PASS  check-ins asking for a move of hours: the top goes 90 minutes and no further   [19:50 -> 18:20, zones 14:05-15:30 / 16:55-19:45]
+  PASS  the untuned figure kept with each check-in does not move with the tuning
 == 2. Sleep debt
   real sleep.json: wake 07:30 bed 23:40 groggy<08:35 peak1 08:35-11:40 dip 13:50-15:55 peak2 18:00-22:05 debt 7.21h  E@10=0.572 E@14.5=0.301 E@19=0.511
   PASS  real data: debt matches an independent sum of the file   [7.212 vs 7.212]
@@ -207,4 +218,13 @@
   PASS  physical work goes first in the late afternoon   [Gym > Notes]
   PASS  no curve and a low counter: the low-effort task first   [Easy > Hard]
   PASS  same input, same order (ties keep the list's order)
+  PASS  ticked off on 3 mornings with no timer: usual for the morning, at the length it was given   [Emails x3 20m, Gym x3 50m, Voice-over x3 30m]
+  PASS  a tick on a day the task was also timed is not counted twice (Emails stays at 3 days, 20 min)   [16 rows from 12 + 5]
+  PASS  timed on two mornings and ticked on a third: usual, at the length it really took (Gym, 50 min)
+  PASS  ticks from before work.csv keep their own timer minutes (18, 22, 41 -> 20)
+  PASS  a tick at 01:30 stands on the night it happened, in the evening part   [2026-11-21T01:30:00]
+  PASS  ticked-off work counts in the share of the morning by effort   [0.41]
+  PASS  still waking up (07:20, groggy until 08:05): the low-effort task first, the high-effort one last, even with a high counter   [Tidy desk > Review > Plain > Write concept]
+  PASS  once the groggy stretch is over: the high-effort task first again   [Write concept > Review > Plain > Tidy desk]
+  PASS  a 90-minute high task 5 minutes before the peak ends: still first, and the reason says when the peak ends   [your peak lasts until 11:25]
 ALL PASS

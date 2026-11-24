@@ -25,6 +25,9 @@ public enum TaskLog {
     static var daysFile: String { return Store.path("days.csv") }
     public static var folder: String { return Store.dir }
 
+    /// Goes up each time done.csv is written, so what is worked out from it (Habits.log in Work.swift) knows to read it again.
+    public static var changes = 0
+
     public static let doneHead = "date,time,task_id,title,effort,kind,from_routine,minutes_planned,placed_by_plan,planned_start,minutes_from_planned_start,timer_minutes,energy_zone"
     public static let daysHead = "date,tasks,done,open,done_pct,high_done,high_total,medium_done,medium_total,low_done,low_total,untagged_done,untagged_total,routines_sent,routines_done,placed_by_plan,placed_done,high_done_on_peak,sleep_hours,sleep_debt_hours"
 
@@ -93,6 +96,7 @@ public enum TaskLog {
         p.append(timerMinutes > 0 ? NetFormat.plain(NetFormat.round(timerMinutes, 1)) : "")
         p.append(zone ?? "")
         append(doneFile, doneHead, p.joined(separator: ","))
+        changes += 1
     }
 
     /// A task was unticked: its row for `day` comes out again, so the record only holds what stayed done.
@@ -109,6 +113,7 @@ public enum TaskLog {
         var text = ""
         for l in lines { text += l + Store.newline }
         do { try Store.writeText(doneFile, text, bom: true) } catch { Store.log(error) }
+        changes += 1
     }
 
     public static func readDone() -> [Row] {

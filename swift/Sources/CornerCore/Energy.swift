@@ -43,6 +43,11 @@ public enum EnergyModel {
     public static let peakBand: Double = 0.40        // a peak zone covers the top 40% of the peak-to-dip range
     public static let dipBand: Double = 0.10         // the dip zone covers the bottom 10% of it (about 1.5-2 h)
     public static let minProminence: Double = 0.03   // a dip shallower than this is ignored
+
+    // --- what the check-ins may do to the times of the peaks and the dip (reshape)
+    public static let tuneMoveMax: Double = 90       // minutes: the furthest a peak or the dip is moved, earlier or later. 0 = never moved, only lifted or lowered
+    public static let tuneMoveMin: Double = 10       // a move smaller than this is not made
+    public static let tuneApart: Double = 30         // minutes a peak and the dip are kept apart, at the least
     public static let minDay: Double = 10            // plausible hours awake; outside this, bedtime = wake + 24 - need
     public static let maxDay: Double = 20
 
@@ -193,9 +198,9 @@ public enum EnergyModel {
             plain[i] = max(0, min(1, rhythmPlain - pressureWeight * (sPlain - restedPressure)))
             e.raw[i] = raw
         }
-        // What the check-ins taught (Checks.swift) is added as one amount for each peak and for the dip, eased from one
-        // to the next. So a hump is lifted or lowered whole: it keeps its place and its even shape, and no check-in
-        // can put a bump of its own on a slope.
+        // What the check-ins taught (Checks.swift): each peak and the dip is lifted or lowered by one amount, eased from
+        // one to the next, and moved earlier or later to where the check-ins put it. A hump stays one even hump,
+        // and no check-in can put a bump of its own on a slope.
         let fit: [Double] = reshape(plain, correction, dt)
         for i in 0..<nAll {
             let f: Double = fit[min(i, n - 1)] // past bedtime: as at bedtime
@@ -209,30 +214,71 @@ public enum EnergyModel {
         return e
     }
 
-    /// The correction for every sample of the day: the learned amount at the start of the day, at each peak, at the
-    /// dip and at bedtime, eased between them (level at each, so the peaks and the dip stay where they are).
+    /// The correction for every sample of the day. The model's curve has five fixed points: the start of the day,
+    /// each peak, the dip and bedtime. Each peak and the dip is first moved to where the check-ins put it: the top
+    /// (or the bottom) of the curve with the correction read at every moment, looked for within tuneMoveMax of the
+    /// model's own. The stretches between the points are stretched or squeezed in time to fit, so the curve keeps
+    /// its shape. Then each point gets the height the check-ins give it, eased from one point to the next (level
+    /// at each, so the peaks and the dip sit exactly where they were put).
     static func reshape(_ plain: [Double], _ correction: ((Double) -> Double)?, _ dt: Double) -> [Double] {
         let n = plain.count
         var fit = [Double](repeating: 0, count: n)
         guard let corr = correction else { return fit }
         if n < 3 { return fit }
         let ex = extremes(plain)
-        var at: [Int] = [0]
+        var from: [Int] = [0]
         let marks: [Int] = ex.dip >= 0 ? [ex.m1, ex.dip, ex.m2, n - 1] : [ex.m1, n - 1]
         for k in marks {
-            if k > at[at.count - 1] { at.append(k) }
+            if k > from[from.count - 1] { from.append(k) }
         }
+        // the curve as the check-ins see it, moment by moment (bumpy: only its tops and its bottom are used)
+        var seen = [Double](repeating: 0, count: n)
+        for i in 0..<n { seen[i] = plain[i] + corr(Double(i) * dt) }
+
+        var to: [Int] = from
+        let step = Double(EnergyDay.stepMin)
+        let reach: Int = Int(NetFormat.round(tuneMoveMax / step))
+        let least: Int = Int(NetFormat.round(tuneMoveMin / step))
+        let apart: Int = max(1, Int(NetFormat.round(tuneApart / step)))
+        if ex.dip >= 0 && from.count == 5 && reach > 0 {
+            // the usual day: a peak, the dip, a peak
+            for j in 1...3 {
+                var best: Int = from[j]
+                let top: Bool = j != 2
+                let lo: Int = max(1, from[j] - reach)
+                let hi: Int = min(n - 2, from[j] + reach)
+                if lo <= hi {
+                    for k in lo...hi {
+                        let better: Bool = top ? (seen[k] > seen[best] + 1e-9) : (seen[k] < seen[best] - 1e-9)
+                        if better { best = k }
+                    }
+                }
+                to[j] = abs(best - from[j]) < least ? from[j] : best
+            }
+            for j in 1...3 { to[j] = max(to[j], to[j - 1] + apart) } // in order, and apart
+            for j in stride(from: 3, through: 1, by: -1) { to[j] = min(to[j], to[j + 1] - apart) }
+            for j in 1..<5 where to[j] <= to[j - 1] {
+                to = from // a day too short for that: nothing moves
+                break
+            }
+        }
+
+        // each point's height: what the check-ins see at its new place, against the model's height at its own
         var amount: [Double] = []
-        for k in at { amount.append(corr(Double(k) * dt)) }
+        for j in 0..<from.count { amount.append(seen[to[j]] - plain[from[j]]) }
         var j = 0
-        while j + 1 < at.count {
-            let a0: Int = at[j]
-            let a1: Int = at[j + 1]
+        while j + 1 < from.count {
+            let a0: Int = to[j]
+            let a1: Int = to[j + 1]
             let width = Double(a1 - a0)
+            let span = Double(from[j + 1] - from[j])
             for i in a0...a1 {
                 let x: Double = Double(i - a0) / width
+                let src: Double = Double(from[j]) + x * span // where on the model's curve this moment comes from
+                let a: Int = min(n - 2, Int(src))
+                let moved: Double = plain[a] + (plain[a + 1] - plain[a]) * (src - Double(a))
                 let ease: Double = (1 - cos(Double.pi * x)) / 2
-                fit[i] = amount[j] + (amount[j + 1] - amount[j]) * ease
+                fit[i] = moved - plain[i] + amount[j] + (amount[j + 1] - amount[j]) * ease
             }
             j += 1
         }

@@ -383,6 +383,91 @@ enum Program {
             check("   tuned curve keeps peak, dip (12:30-16:30) and second peak", ok)
         }
 
+        // the check-ins may also move a peak or the dip in time (EnergyModel.reshape), by 90 minutes at the most
+        print("  -- check-ins that put the afternoon top earlier")
+        do {
+            let tmNights: [Night] = repeatNights(T(23, 0), T(7, 0), 14, day)
+            func tmTop(_ e: EnergyDay, _ a: Int, _ b: Int) -> Int {
+                var k: Int = a
+                var i: Int = a
+                while i <= b {
+                    if e.samples[i] > e.samples[k] { k = i }
+                    i += 1
+                }
+                return k
+            }
+            func tmLow(_ e: EnergyDay) -> Int {
+                var k = 24
+                var i = 24
+                while i < e.samples.count - 24 {
+                    if e.samples[i] < e.samples[k] { k = i }
+                    i += 1
+                }
+                return k
+            }
+            func tmHumps(_ e: EnergyDay, _ a: Int, _ b: Int) -> Int {
+                var n = 0
+                var i: Int = a + 1
+                while i < b {
+                    if e.samples[i] > e.samples[i - 1] + 1e-12 && e.samples[i] >= e.samples[i + 1] { n += 1 }
+                    i += 1
+                }
+                return n
+            }
+            func tmStep(_ e: EnergyDay) -> Double {
+                var m = 0.0
+                for i in 1..<e.samples.count { m = max(m, abs(e.samples[i] - e.samples[i - 1])) }
+                return m
+            }
+            let tmEnd: Int = normal.samples.count - 1
+            let tmDip0: Int = tmLow(normal)
+            let tmTop0: Int = tmTop(normal, tmDip0, tmEnd)
+
+            let tmEarly: (Double) -> Double = { t in 0.08 * exp(-(t - 9.5) * (t - 9.5) / 3) - 0.10 * exp(-(t - 13) * (t - 13) / 3) }
+            let tmE1: EnergyDay = EnergyModel.build(tmNights, need: need, day: day, correction: tmEarly)!
+            describe("fresher at 16:30, flatter at 20:00   ", tmE1)
+            let tmDip1: Int = tmLow(tmE1)
+            let tmTop1: Int = tmTop(tmE1, tmDip1, tmEnd)
+            let tmMoved: Int = (tmTop1 - tmTop0) * 5
+            check("the afternoon top moves earlier, by 90 minutes at the most", tmMoved <= -15 && tmMoved >= -90, c(normal.timeAt(tmTop0)) + " -> " + c(tmE1.timeAt(tmTop1)))
+            var tmZoneEarlier = false
+            if let tmA = tmE1.peak2, let tmB = normal.peak2 { tmZoneEarlier = tmA.from < tmB.from }
+            check("...and its peak zone starts earlier with it", tmZoneEarlier, z(normal.peak2) + " -> " + z(tmE1.peak2))
+            let tmWant: Double = normal.samples[tmTop1] + tmEarly(Double(tmTop1 * 5) / 60.0)
+            check("...its height is what the check-ins say for that moment", abs(tmE1.samples[tmTop1] - tmWant) < 1e-9, f(tmE1.samples[tmTop1], 3))
+            let tmH1: Int = tmHumps(tmE1, 0, tmDip1)
+            let tmH2: Int = tmHumps(tmE1, tmDip1, tmEnd)
+            let tmSmooth: Bool = tmStep(tmE1) <= tmStep(normal) * 1.5 + 0.003
+            check("the curve stays one even hump on each side of the dip, with no jump", tmH1 == 1 && tmH2 == 1 && tmSmooth,
+                  String(tmH1) + " + " + String(tmH2) + " humps, largest step " + f(tmStep(tmE1), 3) + " (plain " + f(tmStep(normal), 3) + ")")
+            var tmOrdered = false
+            if let tmP1 = tmE1.peak1, let tmD = tmE1.dip, let tmP2 = tmE1.peak2 { tmOrdered = tmP1.to <= tmD.from && tmD.to <= tmP2.from }
+            check("zones stay in order: peak, dip, peak", tmOrdered)
+
+            let tmE2: EnergyDay = EnergyModel.build(tmNights, need: need, day: day, correction: { _ in 0.05 })!
+            let tmSameZones: Bool = z(tmE2.peak1) == z(normal.peak1) && z(tmE2.dip) == z(normal.dip) && z(tmE2.peak2) == z(normal.peak2)
+            check("check-ins that only say \"higher all day\" move nothing in time", tmSameZones && tmTop(tmE2, tmDip0, tmEnd) == tmTop0,
+                  z(tmE2.peak1) + " / " + z(tmE2.dip) + " / " + z(tmE2.peak2))
+            var tmLifted = true
+            for i in 0...tmEnd where abs(tmE2.samples[i] - normal.samples[i] - 0.05) >= 1e-9 { tmLifted = false }
+            check("...and lift the whole curve by that much", tmLifted)
+
+            // scores that tilt the afternoon hump hard towards its start (the dip is left alone): read moment by moment,
+            // the best of the afternoon is more than three hours before the model's top
+            let tmTilt: (Double) -> Double = { t in t < 8 ? 0 : max(-0.15, min(0.15, -0.06 * (t - 10.5))) }
+            let tmE3: EnergyDay = EnergyModel.build(tmNights, need: need, day: day, correction: tmTilt)!
+            var tmDip3: Int = tmDip0 // (the evening ends lower than the dip here, so the dip is taken from its zone)
+            if let tmD3 = tmE3.dip { tmDip3 = Int(NetFormat.round(tmD3.from.timeIntervalSince(tmE3.wake) / 60 / 5)) }
+            let tmTop3: Int = tmTop(tmE3, tmDip3, tmEnd)
+            var tmZones3 = false
+            if let tmD3 = tmE3.dip, let tmP3 = tmE3.peak2 { tmZones3 = tmD3.to <= tmP3.from }
+            check("check-ins asking for a move of hours: the top goes 90 minutes and no further", (tmTop0 - tmTop3) * 5 == 90 && tmZones3 && tmHumps(tmE3, tmDip3, tmEnd) == 1,
+                  c(normal.timeAt(tmTop0)) + " -> " + c(tmE3.timeAt(tmTop3)) + ", zones " + z(tmE3.dip) + " / " + z(tmE3.peak2))
+            var tmRawSame = true
+            for i in 0...tmEnd where tmE1.raw[i] != normal.raw[i] { tmRawSame = false }
+            check("the untuned figure kept with each check-in does not move with the tuning", tmRawSame)
+        }
+
         // ------------------------------------------------------------------ 2. debt
         print("== 2. Sleep debt")
         SleepLog.load()
@@ -900,6 +985,53 @@ enum Program {
         let pwAgain: String = pwNames(Priority.rank(pwTasks, energy: normal, now: pwPeak, level: 0.6, rows: nil, working: nil))
         let pwPlain: String = pwNames(Priority.rank([pwT("A", nil, 0), pwT("B", nil, 0), pwT("C", nil, 0)], energy: normal, now: pwPeak, level: 0.6, rows: nil, working: nil))
         check("same input, same order (ties keep the list's order)", pwAgain == pwNames(pwOnPeak) && pwPlain == "A > B > C")
+
+        // ticking a task off counts as doing it, timer or not (Habits.withDone); and the groggy stretch after waking
+        func hcD(_ title: String, _ daysAgo: Int, _ hour: Double, _ timer: Double) -> TaskLog.Row {
+            let moment: Date = day.addingDays(-daysAgo).addingHours(hour)
+            let r = TaskLog.Row()
+            r.day = SleepLog.today(moment)
+            r.at = r.day.atTimeOfDay(moment.timeOfDay) // (as readDone gives it: Corner's day and the clock time)
+            r.id = title + String(daysAgo)
+            r.title = title
+            r.effort = "medium"
+            r.kind = "mental"
+            r.minutes = 30
+            r.timerMinutes = timer
+            return r
+        }
+        func hcHas(_ list: [Habits.Habit], _ title: String, _ days: Int, _ minutes: Int) -> Bool {
+            return list.contains { h in h.title == title && h.days == days && h.minutes == minutes }
+        }
+        let hcDone: [TaskLog.Row] = [hcD("Voice-over", 1, 10, 0), hcD("Voice-over", 2, 11, 0), hcD("Voice-over", 3, 9.5, 0), hcD("Emails", 1, 8.4, 0), hcD("Gym", 2, 9, 0)]
+        let hcLog: [WorkRow] = Habits.withDone(pwLog, hcDone)
+        let hcUsual: [Habits.Habit] = Habits.usual(hcLog, 0, day.addingHours(9))
+        let hcUsualNames: String = hcUsual.map { h in h.title + " x" + String(h.days) + " " + String(h.minutes) + "m" }.joined(separator: ", ")
+        check("ticked off on 3 mornings with no timer: usual for the morning, at the length it was given", hcHas(hcUsual, "Voice-over", 3, 30), hcUsualNames)
+        check("a tick on a day the task was also timed is not counted twice (Emails stays at 3 days, 20 min)", hcHas(hcUsual, "Emails", 3, 20) && hcLog.count == pwLog.count + 4,
+              String(hcLog.count) + " rows from " + String(pwLog.count) + " + " + String(hcDone.count))
+        check("timed on two mornings and ticked on a third: usual, at the length it really took (Gym, 50 min)", hcHas(hcUsual, "Gym", 3, 50))
+        let hcOld: [WorkRow] = Habits.withDone([], [hcD("Sketch", 1, 10, 18), hcD("Sketch", 2, 10, 22), hcD("Sketch", 3, 10, 41)])
+        let hcOldUsual: [Habits.Habit] = Habits.usual(hcOld, 0, day.addingHours(9))
+        check("ticks from before work.csv keep their own timer minutes (18, 22, 41 -> 20)", hcOldUsual.contains { h in h.title == "Sketch" && h.minutes == 20 })
+        let hcNight: [WorkRow] = Habits.withDone([], [hcD("Late thing", 1, 25.5, 0)])
+        let hcNightAt: Date = hcNight[0].start
+        check("a tick at 01:30 stands on the night it happened, in the evening part", hcNightAt == day.addingHours(1.5) && Habits.part(hcNightAt) == 3,
+              CornerTime.formatDay(hcNightAt) + "T" + CornerTime.clock24(hcNightAt) + ":00")
+        let hcShare: Double = Habits.typeShare(hcLog, 0, day.addingHours(9), effort: "medium", kind: "mental")
+        check("ticked-off work counts in the share of the morning by effort", hcShare > 0.3, f(hcShare, 2))
+
+        let hcWake: Date = normal.wake.addingMinutes(20)
+        let hcGroggy: [Ranked] = Priority.rank(pwTasks, energy: normal, now: hcWake, level: 0.9, rows: nil, working: nil)
+        let hcGroggyOk: Bool = hcGroggy[0].task.title == "Tidy desk" && hcGroggy[0].why == "easy start while you wake up" && hcGroggy[hcGroggy.count - 1].task.title == "Write concept"
+        check("still waking up (" + c(hcWake) + ", groggy until " + c(normal.groggyUntil) + "): the low-effort task first, the high-effort one last, even with a high counter",
+              hcGroggyOk, pwNames(hcGroggy))
+        let hcAfter: [Ranked] = Priority.rank(pwTasks, energy: normal, now: normal.groggyUntil.addingMinutes(10), level: 0.9, rows: nil, working: nil)
+        check("once the groggy stretch is over: the high-effort task first again", hcAfter[0].task.title == "Write concept", pwNames(hcAfter))
+        let hcPeakEnd: Date = normal.peak1!.to
+        let hcEnd: [Ranked] = Priority.rank([pwT("Long write", "high", 90), pwT("Tidy desk", "low", 15)], energy: normal, now: hcPeakEnd.addingMinutes(-5), level: 0.6, rows: nil, working: nil)
+        check("a 90-minute high task 5 minutes before the peak ends: still first, and the reason says when the peak ends",
+              hcEnd[0].task.title == "Long write" && hcEnd[0].why == "your peak lasts until " + EnergyDay.clock(hcPeakEnd), hcEnd[0].why ?? "")
 
         print(fails == 0 ? "ALL PASS" : String(fails) + " FAILED")
     }

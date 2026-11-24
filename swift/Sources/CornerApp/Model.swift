@@ -95,6 +95,7 @@ final class AppModel: ObservableObject {
     // ---- the work log, the order by priority, habits and the typed energy % (WorkModel.swift)
     var workId: String? = nil       // the task whose stretch of work is open
     var workStart = Date()
+    var workSeen = Date()           // the last second the open stretch was seen going on (workAwake)
     var workE0: Double = -1
     var workFelt: Double = -1
     var workWhy: String? = nil      // why the open stretch is about to end, when the code that ends it knows
@@ -103,6 +104,7 @@ final class AppModel: ObservableObject {
     var orderUndo: [String]? = nil      // the list order the applied one replaced
     var habitCache: [Habits.Habit]? = nil
     var habitRows = -1
+    var habitDone = -1              // TaskLog.changes when the habits were last worked out
     var habitPart = -1
     var habitDay = Date.distantPast
     var feelEntries: [Calibration.Entry]? = nil // feel.csv, read once and kept
@@ -732,6 +734,7 @@ final class AppModel: ObservableObject {
 
     /// Every second.
     func tick() {
+        workAwake() // the Mac slept meanwhile? Before the timer is looked at (WorkModel.swift)
         let now = Date()
         let dt = min(5, now.timeIntervalSince(lastTimerTick))
         lastTimerTick = now
@@ -814,7 +817,10 @@ final class AppModel: ObservableObject {
 
     func logDone(_ t: TaskItem) {
         let now = AppModel.now()
-        TaskLog.done(t, at: now, day: SleepLog.today(now), timerMinutes: (timerSecs[t.id] ?? 0) / 60, zone: zoneName(now))
+        var secs: Double = timerSecs[t.id] ?? 0
+        let worked: Double = elapsed(t) // the time worked on it, kept in tasks.json: it outlasts a restart, which the count above does not
+        if worked > 0 { secs = worked }
+        TaskLog.done(t, at: now, day: SleepLog.today(now), timerMinutes: secs / 60, zone: zoneName(now))
     }
 
     func logUndone(_ t: TaskItem) { TaskLog.undone(t.id, day: SleepLog.today(AppModel.now())) }

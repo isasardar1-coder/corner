@@ -36,6 +36,7 @@ final class FeelAfter {
 
 extension AppModel {
     static let awayIdleSec: Double = 600 // no key or mouse for this long pauses the task being worked on
+    static let tickGapSec: Double = 90   // the once-a-second tick missing for this long: the Mac was asleep, and the work stopped when it was last seen
 
     static var priorityMode: Bool { return Settings.get("PlanBy", 0) > 0.5 }
     var showWatch: Bool { return Settings.get("Stopwatch", 1) > 0.5 }
@@ -77,6 +78,7 @@ extension AppModel {
         if let w = want {
             workId = w
             workStart = Date()
+            workSeen = workStart
             workE0 = energyPct(AppModel.now())
             workFelt = -1
         }
@@ -125,8 +127,9 @@ extension AppModel {
 
     /// The Mac locked or went to sleep, or sat untouched for ten minutes: the task being worked on is paused, and the
     /// stretch ends when you left, not when Corner noticed. Never in a test render.
-    func autoPause(_ end: Date) {
+    func autoPause(_ endIn: Date) {
         if workId == nil || demoRun { return }
+        let end: Date = endIn < workStart ? workStart : endIn
         workEnd("away", end)
         if AppModel.priorityMode {
             // (the task stays in hand, paused: timerClick)
@@ -134,7 +137,7 @@ extension AppModel {
             timerLeft = 0
             resortData()
         } else {
-            timerLeft = max(0, timerSeconds())
+            timerLeft = max(0, timerEnd.timeIntervalSince(end)) // the countdown stops where it stood when you left
             timerRunning = false
         }
         save()
@@ -142,6 +145,19 @@ extension AppModel {
             changed()
             shell?.contentChanged()
         }
+    }
+
+    /// Once a second, before the timer is looked at (tick). The Mac can go to sleep without Corner being told in
+    /// time; the ticks then simply stop. A long gap between two ticks means the work ended at the last one, so a
+    /// night's sleep is never logged as work and never runs a countdown out.
+    func workAwake() {
+        if workId == nil { return }
+        let now = Date()
+        if now.timeIntervalSince(workSeen) > AppModel.tickGapSec && workSeen >= workStart {
+            autoPause(workSeen)
+            return
+        }
+        workSeen = now
     }
 
     /// Once a second (tick).
@@ -174,7 +190,7 @@ extension AppModel {
         let pct: Double = energyPct(now)
         let level: Double = pct < 0 ? -1 : pct / 100
         // the task in hand stays first, running or paused
-        return CornerCore.Priority.rank(data.tasks, energy: energy, now: now, level: level, rows: WorkLog.rows, working: timerId)
+        return CornerCore.Priority.rank(data.tasks, energy: energy, now: now, level: level, rows: Habits.log, working: timerId)
     }
 
     /// Priority mode: puts the open tasks in the order to do them now. Only the data; the caller redraws.
@@ -265,10 +281,11 @@ extension AppModel {
     func habitOffer() -> [Habits.Habit] {
         let now = AppModel.now()
         let part: Int = Habits.part(now)
-        let rows: [WorkRow] = WorkLog.rows
-        if habitCache == nil || habitRows != rows.count || habitPart != part || habitDay != now.dateOnly {
+        let rows: [WorkRow] = Habits.log // timed work and ticked-off tasks
+        if habitCache == nil || habitRows != rows.count || habitDone != TaskLog.changes || habitPart != part || habitDay != now.dateOnly {
             habitCache = Habits.usual(rows, part, now)
             habitRows = rows.count
+            habitDone = TaskLog.changes
             habitPart = part
             habitDay = now.dateOnly
         }
