@@ -746,8 +746,11 @@ struct PlanTicket: View {
             }
         }
         .frame(minHeight: nameW + 26)
+        // Sage and Glass: the card's ground is cut to shape together with the strip, as it always was. A made skin:
+        // the ground is a box of its own behind the strip, with its shadow and bevel
+        .background(T.made ? Color.clear : T.field)
         .clipShape(RoundedRectangle(cornerRadius: r, style: .continuous))
-        .plate(.field, radius: r, rim: r)
+        .plate(T.made ? .field : .clear, radius: r, rim: r)
     }
 
     static func name(_ prio: Bool, _ model: AppModel) -> String {

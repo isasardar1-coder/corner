@@ -145,7 +145,7 @@ struct HeadIcon: View {
     var body: some View {
         Glyph(d: d, color: T.text, th: th, w: size, h: size)
             .frame(width: cell, height: cell)
-            .plate(hot ? .lift : .field, rim: cell / 2)
+            .plate(hot ? .lift : .field, rim: cell / 2, disc: true)
             .contentShape(Circle())
             .onHover { hot = $0 }
             .onTapGesture { action() }
@@ -173,7 +173,7 @@ struct RingDisc: View {
         .frame(width: 24, height: 24)
         .scaleEffect(k)
         .frame(width: cell, height: cell)
-        .plate(.field, rim: cell / 2)
+        .plate(.field, rim: cell / 2, disc: true)
         .help(all == 0 ? "Progress: fills as tasks are ticked off" : "Progress: " + String(done) + " of " + String(all) + " tasks done")
     }
 }

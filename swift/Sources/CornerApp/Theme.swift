@@ -106,9 +106,11 @@ enum T {
     /// The accent seen on the strong colour: a prompt's caption.
     static var accentOn: Color { return p("#B4C12A", "#EDF3F7FB", "#D9DCDF", "#C6D233", "#A9C6DD") }
     // the main button ("Done", "Plan my day"), the chosen one of a set of tabs, a switch that is on and the next
-    // task's waiting timer: lime in Sage and Ceramic, steel in Metal, blue in Paper, bright glass in Glass
-    static var main: Color { return p("#B4C12A", "#CCFFFFFF", "#5F656B", "#BECB2B", "#3E79AF") }
-    static var onMain: Color { return p("#141A12", "#0F1822", "#FFFFFF", "#141A12", "#FFFFFF") }
+    // task's waiting timer: lime in Sage and Ceramic, steel in Metal, blue in Paper. In Glass it is this Glass's own
+    // accent, icy blue. (On Windows, Glass has bright clear glass here, "#CCFFFFFF" with "#0F1822" on it; on this
+    // Glass, whose cards are nearly white, that draws a chosen tab and a switch's track white on white.)
+    static var main: Color { return p("#B4C12A", "#A9D5FF", "#5F656B", "#BECB2B", "#3E79AF") }
+    static var onMain: Color { return p("#141A12", "#142638", "#FFFFFF", "#141A12", "#FFFFFF") }
     /// The knob of a switch that is off.
     static var knob: Color { return p("#FFFFFF", "#F5FFFFFF", "#FFFFFF", "#FBFAF6", "#FFFFFF") }
     /// The hours of expected sleep on the chart.

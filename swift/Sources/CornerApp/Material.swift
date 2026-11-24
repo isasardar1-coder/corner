@@ -423,16 +423,19 @@ struct SheetGrain: View {
     }
 }
 
-/// What is behind a box: its colour as a pill or as a box with round corners, and in a made skin its depth too.
+/// What is behind a box: its colour as a pill, a disc or a box with round corners, and in a made skin its depth too.
 struct PlateGround: View {
     let tone: Tone
     let radius: CGFloat? // nil: a pill
+    let disc: Bool       // a pill as wide as it is high: drawn as the circle it was before there were made skins
     let skin: Int
 
     var body: some View {
         ZStack {
             if let r = radius {
                 RoundedRectangle(cornerRadius: r, style: .continuous).fill(tone.color)
+            } else if disc {
+                Circle().fill(tone.color)
             } else {
                 Capsule().fill(tone.color)
             }
@@ -449,18 +452,20 @@ struct Plate: ViewModifier {
     let tone: Tone
     let radius: CGFloat? // nil: a pill
     let rim: CGFloat?    // Glass: the radius of the hairline round it; nil: none
+    let disc: Bool
     let skin: Int        // (kept, so that a change of skin draws the box again)
 
     func body(content: Content) -> some View {
         content
-            .background(PlateGround(tone: tone, radius: radius, skin: skin))
+            .background(PlateGround(tone: tone, radius: radius, disc: disc, skin: skin))
             .overlay(Rim(radius: rim ?? 0, on: rim != nil && skin == 1))
     }
 }
 
 extension View {
-    /// Puts the view in a box filled with `tone`: a pill, or with `radius` a box with round corners.
-    func plate(_ tone: Tone, radius: CGFloat? = nil, rim: CGFloat? = nil) -> some View {
-        return modifier(Plate(tone: tone, radius: radius, rim: rim, skin: T.skin))
+    /// Puts the view in a box filled with `tone`: a pill (a round one with `disc`), or with `radius` a box with
+    /// round corners.
+    func plate(_ tone: Tone, radius: CGFloat? = nil, rim: CGFloat? = nil, disc: Bool = false) -> some View {
+        return modifier(Plate(tone: tone, radius: radius, rim: rim, disc: disc, skin: T.skin))
     }
 }

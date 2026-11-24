@@ -547,6 +547,9 @@ final class PanelController: NSObject, NSMenuDelegate {
         model.demoRun = true
         FitScrollFlag.plain = true
         if let v = ProcessInfo.processInfo.environment["CORNER_SKIN"], let i = Int(v) { T.use(i) } // any mode in a skin (0 to 4)
+        if let v = ProcessInfo.processInfo.environment["CORNER_SKIN_TO"], let i = Int(v) { // and then, on screen, the change to another
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in self?.model.setSkin(i) }
+        }
         if mode.hasPrefix("onboard") {
             let step = Int(String(mode.dropFirst(7))) ?? 0
             showOnboarding(step: step)

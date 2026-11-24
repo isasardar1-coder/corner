@@ -55,16 +55,19 @@ ls -la out
 [ "${DEMOS:-1}" = "0" ] && exit 0
 
 # test renders: each mode starts from an empty data folder. "settings@2" is a mode in another skin (CORNER_SKIN:
-# 0 Sage, 1 Glass, 2 Metal, 3 Ceramic, 4 Paper), written to demo-settings-skin2.png
-MODES="${DEMO_MODES:-tasks all adding energy settings checkin feedback timeup debt nap glass rest full fullenergy fullplan fullapplied fullroutines fullsettings priority paused order habits planning onboard0 onboard1 onboard2 onboard3 rise metal ceramic paper fullmetal fullceramic fullpaper all@2 all@3 all@4 settings@1 settings@2 settings@3 settings@4 energy@2 energy@3 energy@4 timeup@2 timeup@3 timeup@4 fullplan@2 fullplan@3 fullplan@4 fullsettings@2 fullsettings@3 fullsettings@4 rise@2 rise@3 rise@4 onboard2@2 onboard2@3 onboard2@4 onboard3@2 onboard3@4 checkin@2 checkin@3 checkin@4 debt@3 priority@2 priority@4}"
+# 0 Sage, 1 Glass, 2 Metal, 3 Ceramic, 4 Paper), written to demo-settings-skin2.png. "settings@0:2" starts in the
+# first skin and changes to the second while it is on screen (CORNER_SKIN_TO), written to demo-settings-skin0to2.png
+MODES="${DEMO_MODES:-tasks all adding energy settings checkin feedback timeup debt nap glass rest full fullenergy fullplan fullapplied fullroutines fullsettings priority paused order habits planning onboard0 onboard1 onboard2 onboard3 rise metal ceramic paper fullmetal fullceramic fullpaper all@2 all@3 all@4 settings@1 settings@2 settings@3 settings@4 energy@2 energy@3 energy@4 timeup@1 timeup@2 timeup@4 fullplan@2 fullplan@4 fullsettings@1 fullsettings@2 fullsettings@4 rise@2 rise@3 rise@4 onboard2@2 onboard2@3 onboard2@4 full@1 settings@0:2 settings@2:0 settings@0:1 settings@3:1 all@0:3 energy@4:2 full@0:4 full@2:0 full@0:1 rise@0:3 rise@4:0 onboard2@0:2 onboard2@3:0 timeup@3:4}"
 fail=0
 for entry in $MODES; do
   mode="${entry%@*}"
   skin=""
-  [ "$entry" != "$mode" ] && skin="${entry#*@}"
+  to=""
+  if [ "$entry" != "$mode" ]; then skin="${entry#*@}"; fi
+  case "$skin" in *:*) to="${skin#*:}"; skin="${skin%:*}";; esac
   data="$(mktemp -d)"
-  png="$PWD/out/demo-$mode${skin:+-skin$skin}.png"
-  CORNER_DATA="$data" CORNER_SKIN="$skin" "$APP/Contents/MacOS/Corner" --demo "$png" "$mode" & pid=$!
+  png="$PWD/out/demo-$mode${skin:+-skin$skin}${to:+to$to}.png"
+  CORNER_DATA="$data" CORNER_SKIN="$skin" CORNER_SKIN_TO="$to" "$APP/Contents/MacOS/Corner" --demo "$png" "$mode" & pid=$!
   for i in $(seq 1 45); do kill -0 $pid 2>/dev/null || break; sleep 1; done
   kill $pid 2>/dev/null || true
   wait $pid 2>/dev/null || true

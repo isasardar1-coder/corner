@@ -638,8 +638,11 @@ struct FitScroll<Content: View>: View {
     @State private var h: CGFloat = 0
 
     var body: some View {
-        // a made skin: room under the last box for the shadow it casts, inside what is cut off (Material.swift)
+        // A made skin: the last box casts a shadow below itself (Material.swift), which needs room inside what is
+        // cut off. When everything fits, the view reaches that much further down, into the margin under it; when
+        // it scrolls, the room is at the end of what scrolls.
         let room: CGFloat = T.made ? 8 : 0
+        let over: CGFloat = h <= maxHeight ? room : 0
         Group {
             if FitScrollFlag.plain {
                 VStack(spacing: 0) {
@@ -650,9 +653,9 @@ struct FitScroll<Content: View>: View {
                     Spacer(minLength: 0)
                 }
                 .frame(height: max(1, min(h, maxHeight)), alignment: .top)
-                .padding(.bottom, room)
+                .padding(.bottom, over)
                 .clipped()
-                .padding(.bottom, -room)
+                .padding(.bottom, -over)
             } else {
                 ScrollView(.vertical, showsIndicators: false) {
                     content()
@@ -660,9 +663,9 @@ struct FitScroll<Content: View>: View {
                         .background(GeometryReader { g in Color.clear.preference(key: FitHeightKey.self, value: g.size.height) })
                         .padding(.bottom, room)
                 }
-                .frame(height: max(1, min(h, maxHeight)) + room)
+                .frame(height: max(1, min(h, maxHeight)) + over)
                 .clipped()
-                .padding(.bottom, -room)
+                .padding(.bottom, -over)
             }
         }
         .onPreferenceChange(FitHeightKey.self) { v in if abs(v - h) > 0.5 { h = v } }
