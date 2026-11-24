@@ -54,18 +54,26 @@ ls -la out
 
 [ "${DEMOS:-1}" = "0" ] && exit 0
 
-# test renders: each mode starts from an empty data folder
-MODES="${DEMO_MODES:-tasks all adding energy settings checkin feedback timeup debt nap glass rest full fullenergy fullplan fullapplied fullroutines fullsettings priority paused order habits planning onboard0 onboard1 onboard2 onboard3 rise}"
+# test renders: each mode starts from an empty data folder. In DEMO_MODES, "settings@2" is a mode in another skin
+# (CORNER_SKIN: 0 Sage, 1 Glass, 2 Metal, 3 Ceramic, 4 Paper), written to demo-settings-skin2.png; "settings@0:2"
+# starts in the first skin and changes to the second while it is on screen (CORNER_SKIN_TO), written to
+# demo-settings-skin0to2.png
+MODES="${DEMO_MODES:-tasks all adding energy settings checkin feedback timeup debt nap glass rest full fullenergy fullplan fullapplied fullroutines fullsettings priority paused order habits planning onboard0 onboard1 onboard2 onboard3 rise metal ceramic paper fullmetal fullceramic fullpaper}"
 fail=0
-for mode in $MODES; do
+for entry in $MODES; do
+  mode="${entry%@*}"
+  skin=""
+  to=""
+  if [ "$entry" != "$mode" ]; then skin="${entry#*@}"; fi
+  case "$skin" in *:*) to="${skin#*:}"; skin="${skin%:*}";; esac
   data="$(mktemp -d)"
-  png="$PWD/out/demo-$mode.png"
-  CORNER_DATA="$data" "$APP/Contents/MacOS/Corner" --demo "$png" "$mode" & pid=$!
+  png="$PWD/out/demo-$mode${skin:+-skin$skin}${to:+to$to}.png"
+  CORNER_DATA="$data" CORNER_SKIN="$skin" CORNER_SKIN_TO="$to" "$APP/Contents/MacOS/Corner" --demo "$png" "$mode" & pid=$!
   for i in $(seq 1 45); do kill -0 $pid 2>/dev/null || break; sleep 1; done
   kill $pid 2>/dev/null || true
   wait $pid 2>/dev/null || true
-  if [ -s "$png" ]; then echo "rendered $mode"; else echo "no render: $mode"; fail=1; fi
-  [ -f "$data/error.log" ] && { echo "--- error.log ($mode)"; cat "$data/error.log"; }
+  if [ -s "$png" ]; then echo "rendered $entry"; else echo "no render: $entry"; fail=1; fi
+  [ -f "$data/error.log" ] && { echo "--- error.log ($entry)"; cat "$data/error.log"; }
   rm -rf "$data"
 done
 exit $fail

@@ -15,7 +15,7 @@ struct CheckInView: View {
     var body: some View {
         let name = Profile.name
         let title = model.checkInEdit ? "Last night's sleep" : "Good morning" + (name.isEmpty ? "" : ", " + name) + ". How did you sleep?"
-        return CardBox(surface: T.tray) {
+        return CardBox(surface: .tray) {
             Text(title).font(m.head(14)).foregroundColor(T.text).fixedSize(horizontal: false, vertical: true).padding(.bottom, 10)
             HStack(spacing: 0) {
                 Caps(text: "Fell asleep").frame(width: 92 + 6, alignment: .leading)
@@ -104,8 +104,7 @@ struct SetCard: View {
         }
         .padding(.horizontal, m.padX).padding(.vertical, 1)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: m.radius, style: .continuous).fill(T.field))
-        .overlay(Rim(radius: m.radius))
+        .plate(.field, radius: m.radius, rim: m.radius)
     }
 }
 
@@ -163,9 +162,7 @@ struct PanelSettings: View {
         return Group {
             SetCaps(text: "Panel")
             SetCard(lines: [
-                SettingLine(title: "Look", sub: T.glass ? "Frosted glass over what is behind" : "Sage, forest and lime") {
-                    Segmented(names: T.names, chosen: T.skin) { model.setSkin($0) }
-                }.any(),
+                SkinPicker().any(),
                 SettingLine(title: model.full ? "Text size in Full Mode" : "Text size", sub: "Cmd + scroll also works") {
                     HStack(spacing: 0) {
                         StepBtn(sign: "–") { model.setScale(model.currentScale - 0.05, save: true) }
@@ -185,6 +182,38 @@ struct PanelSettings: View {
     }
 }
 
+/// The five skins, as a row of pills that wraps: too many for joined segments in the corner panel. The chosen one
+/// is the colour of the main button.
+struct SkinPicker: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.m) var m
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Look").font(m.font(12.5)).foregroundColor(T.text)
+            Text(T.says[T.skin]).font(m.font(10.5)).foregroundColor(T.muted).fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 1).padding(.bottom, m.sp(8, 7))
+            FlowRow(items: pills(), hs: 5, vs: 5)
+        }
+        .padding(.top, m.sp(10, 9)).padding(.bottom, m.sp(6, 5))
+    }
+
+    func pills() -> [AnyView] {
+        var list: [AnyView] = []
+        for i in 0..<T.names.count {
+            let on: Bool = i == T.skin
+            let pill = Text(T.names[i]).font(m.font(11)).foregroundColor(on ? T.onMain : T.text)
+                .lineLimit(1).fixedSize()
+                .padding(.horizontal, 12).padding(.top, 4).padding(.bottom, 5)
+                .plate(on ? .main : .raised)
+                .contentShape(Capsule())
+                .onTapGesture { if !on { model.setSkin(i) } }
+            list.append(pill.any())
+        }
+        return list
+    }
+}
+
 /// A small picture of the screen; click a corner to make it the one that opens the list.
 struct CornerPicker: View {
     @EnvironmentObject var model: AppModel
@@ -199,7 +228,7 @@ struct CornerPicker: View {
                         let right = v == 0 || v == 2
                         let top = v < 2
                         RoundedRectangle(cornerRadius: on ? 3 : 2)
-                            .fill(on ? T.strong : T.ctl)
+                            .fill(on ? T.main : T.ctl)
                             .frame(width: on ? 10 : 6, height: on ? 10 : 6)
                             .padding(on ? 5 : 7)
                             .frame(width: 30, height: 22, alignment: Alignment(horizontal: right ? .trailing : .leading, vertical: top ? .top : .bottom))
@@ -270,9 +299,9 @@ struct PrayerRow: View {
     var body: some View {
         HStack(spacing: 6) {
             Text("At").font(m.font(11.5)).foregroundColor(T.muted)
-            TimeEntryView(e: at, surface: T.raised, onSubmit: save)
+            TimeEntryView(e: at, surface: .raised, onSubmit: save)
             Text("for").font(m.font(11.5)).foregroundColor(T.muted)
-            MiniBox(text: Binding(get: { mins }, set: { mins = $0; bad = false }), width: 24, bad: bad, surface: T.raised, onSubmit: save)
+            MiniBox(text: Binding(get: { mins }, set: { mins = $0; bad = false }), width: 24, bad: bad, surface: .raised, onSubmit: save)
             Text("min").font(m.font(11.5)).foregroundColor(T.muted)
             Spacer(minLength: 0)
         }
@@ -354,8 +383,7 @@ struct SleepHistory: View {
             }
             .padding(.horizontal, m.padX).padding(.top, m.padY - 4).padding(.bottom, m.padY - 2)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: m.radius, style: .continuous).fill(T.field))
-            .overlay(Rim(radius: m.radius))
+            .plate(.field, radius: m.radius, rim: m.radius)
         }
     }
 

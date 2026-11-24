@@ -23,7 +23,7 @@ struct EnergyView: View {
                     RoutinesCard()
                 }
             } else {
-                CardBox(surface: T.tray) {
+                CardBox(surface: .tray) {
                     Text("Enter last night's sleep to see today's curve.")
                         .font(m.font(12.5)).foregroundColor(T.muted).fixedSize(horizontal: false, vertical: true)
                         .padding(.bottom, 10)
@@ -50,7 +50,7 @@ struct CurveTray: View {
         var rest = parts.dropFirst().joined(separator: " · ")
         if let f = rest.first { rest = String(f).uppercased() + rest.dropFirst() }
         if e.bedPush >= 5 { rest += (rest.isEmpty ? "" : " · ") + "late nap: wind-down about " + String(Int(e.bedPush.rounded())) + " min later" }
-        return CardBox(surface: T.tray) {
+        return CardBox(surface: .tray) {
             // the words on the left; on the right, the curve's value right now as a percentage
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 1) {
@@ -229,8 +229,7 @@ struct FeelFrame: ViewModifier {
             .padding(.top, m.sp(10, 8))
             .padding(.bottom, m.sp(4, 2))
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: m.radius * 0.75, style: .continuous).fill(T.field))
-            .overlay(Rim(radius: m.radius * 0.75))
+            .plate(.field, radius: m.radius * 0.75, rim: m.radius * 0.75)
             .padding(.bottom, m.sp(10, 8))
     }
 }
@@ -350,11 +349,11 @@ struct Chart: View {
             let zw = max(1, X(z.to) - zx)
             var c2 = ctx
             c2.clip(to: Path(CGRect(x: zx, y: 0, width: zw, height: H)))
-            c2.fill(area, with: .color(z.peak ? T.accent : T.strong))
+            c2.fill(area, with: .color(z.peak ? T.accent : T.dip))
             if zw >= 28 {
                 let name = z.peak ? "peak" : "dip"
                 let lw = Fonts.width(name, m.z(9))
-                names.append((label(name, 9, z.peak ? T.onAccent : T.onStrong), CGPoint(x: pinX(zx, zx + zw, lw), y: H - 15)))
+                names.append((label(name, 9, z.peak ? T.onAccent : T.onDip), CGPoint(x: pinX(zx, zx + zw, lw), y: H - 15)))
             }
         }
         for nap in e.naps {
@@ -501,9 +500,8 @@ struct Stat: View {
         .padding(.leading, m.padX - 3.5).padding(.trailing, m.padX - 5.5)
         .padding(.top, m.padY - 3.5).padding(.bottom, m.padY - 5.5)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: m.sp(18, 16), style: .continuous).fill(T.field))
-        .overlay(RoundedRectangle(cornerRadius: m.sp(18, 16), style: .continuous).stroke(outlined ? T.strong : Color.clear, lineWidth: 1.5))
-        .overlay(Rim(radius: m.sp(18, 16)))
+        .overlay(boxShape(m.sp(18, 16)).stroke(outlined ? T.strong : Color.clear, lineWidth: 1.5))
+        .plate(.field, radius: m.sp(18, 16), rim: m.sp(18, 16))
         .contentShape(Rectangle())
         .onTapGesture { action?() }
         .help(tip ?? "")
@@ -521,7 +519,7 @@ struct NeedHintCard: View {
         if let h = model.needHint, h.ready, abs(h.need - cur) >= 0.249, abs(Settings.get("NeedDeclined", 0) - h.need) >= 0.249 {
             let d = AppModel.durShort
             let text = message(h, cur)
-            CardBox(surface: T.tray) {
+            CardBox(surface: .tray) {
                 Caps(text: "Sleep need")
                 Text(text).font(m.font(12)).foregroundColor(T.text).fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 6).padding(.bottom, 9)
@@ -576,7 +574,7 @@ struct DebtCard: View {
             bars.append((max(3, CGFloat(min(1, n.totalHours / top)) * BH), isShort, n.assumed, tip, false))
         }
         let debt = e.debtHours
-        return CardBox(surface: T.field) {
+        return CardBox(surface: .field) {
             Caps(text: "Sleep debt calculator").padding(.bottom, 8)
             ZStack(alignment: .bottom) {
                 HStack(alignment: .bottom, spacing: 0) {
@@ -706,7 +704,7 @@ struct NapsBlock: View {
                     Btn(text: "Remove", kind: 2) { model.removeNap(nap) }
                 }
                 .padding(.leading, m.padX).padding(.trailing, m.padX - m.sp(6, 5)).padding(.vertical, 3)
-                .background(Capsule().fill(T.field))
+                .plate(.field)
             }
             if model.napOffer && model.full && !AppModel.priorityMode {
                 HStack(spacing: 4) {
@@ -748,9 +746,11 @@ struct PlanTicket: View {
             }
         }
         .frame(minHeight: nameW + 26)
-        .background(T.field)
-        .clipShape(RoundedRectangle(cornerRadius: r, style: .continuous))
-        .overlay(Rim(radius: r))
+        // Sage and Glass: the card's ground is cut to shape together with the strip, as it always was. A made skin:
+        // the ground is a box of its own behind the strip, with its shadow and bevel
+        .background(T.made ? Color.clear : T.field)
+        .clipShape(boxShape(r))
+        .plate(T.made ? .field : .clear, radius: r, rim: r)
     }
 
     static func name(_ prio: Bool, _ model: AppModel) -> String {
@@ -1027,7 +1027,7 @@ struct RoutinesCard: View {
     var body: some View {
         let all = model.routines
         let waiting = model.routinesWaiting()
-        return CardBox(surface: T.field) {
+        return CardBox(surface: .field) {
             HStack(spacing: 0) {
                 HStack(spacing: 0) {
                     Glyph(d: "M2.5,1 L5.5,4 L2.5,7", color: T.text, th: 1.5, w: 8, h: 8)
@@ -1133,7 +1133,7 @@ struct NewRoutineBox: View {
             Text("min").font(m.font(11)).foregroundColor(T.muted).padding(.leading, 5).padding(.trailing, 8)
         }
         .padding(.leading, 12).padding(.trailing, 5).padding(.vertical, 4)
-        .background(Capsule().fill(T.raised))
+        .plate(.raised)
         .padding(.top, 4).padding(.bottom, 2)
     }
 }

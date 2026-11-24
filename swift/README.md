@@ -52,7 +52,8 @@ The app is not notarised: the first time, right-click Corner.app and choose Open
 | `Toast.swift` | The energy notices: a card at the panel's corner with `ping.wav` |
 | `Onboard.swift` | The welcome window on the very first start |
 | `Controls.swift` | Shared pieces: glyphs drawn from the Windows path strings, buttons, chips, switches, text boxes, time entry, flow layout |
-| `Theme.swift` | The two skins (Sage and Glass), Gilroy, and the grid of sizes and insets |
+| `Theme.swift` | The colours of the five skins (Sage, Glass, Metal, Ceramic, Paper; `Skin` in `settings.json` is 0 to 4, as on Windows), Gilroy, and the grid of sizes and insets |
+| `Material.swift` | The depth of Metal, Ceramic and Paper, ported from the Windows `Material.cs`: the panel's sheet, trays pressed in, cards and pills raised, with their grain, bevel, gloss and layered shadows (no blur). Also `Plate`, the one place every box of every skin is drawn |
 | `Platform.swift` | Idle time, the sound, notifications, Finder, the login item (a LaunchAgent) |
 | `Icon.swift` | The menu-bar icon and the app icon |
 
@@ -62,7 +63,13 @@ position on a Mac is kept under its own keys (`MacMoved`, `MacPosX`, `MacPosY`, 
 
 Test renders: `CORNER_DATA=/tmp/x Corner.app/Contents/MacOS/Corner --demo out.png <mode>` fills a throwaway list and
 writes the panel to a PNG. Modes include `tasks`, `all`, `adding`, `energy`, `settings`, `checkin`, `feedback`,
-`timeup`, `debt`, `nap`, `glass`, `rest`, `full`, `fullenergy`, `fullplan`, `fullroutines`, `fullsettings`,
+`timeup`, `debt`, `nap`, `rest`, `full`, `fullenergy`, `fullplan`, `fullroutines`, `fullsettings`,
 `priority` (Plan by Priority, a task worked on for 12:34), `paused` (the same, then paused), `order` (Full Mode, a
 proposed order), `habits` (the chips under the add box), `planning` (Full Mode settings, the Planning card),
-`onboard0` to `onboard3` and `rise` / `dip` (the notice). A test render never pauses a task for being idle.
+`onboard0` to `onboard3` and `rise` / `dip` (the notice). `glass`, `metal`, `ceramic` and `paper` are `tasks` in
+that skin, and `fullglass`, `fullmetal`, `fullceramic`, `fullpaper` the same in Full Mode. Any other mode is rendered
+in a skin with `CORNER_SKIN=0` to `4` (Sage, Glass, Metal, Ceramic, Paper), which is read in a test render only; in
+`package.sh` that is written `settings@2` in `DEMO_MODES`, and the picture is `demo-settings-skin2.png`.
+`CORNER_SKIN_TO` then changes the skin while the panel is on screen, as its pill in Settings does (`settings@0:2`,
+`demo-settings-skin0to2.png`): the picture should be the same as the one that started in that skin.
+A test render never pauses a task for being idle.

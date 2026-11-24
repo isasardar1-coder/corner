@@ -7,6 +7,7 @@ import CornerCore
 struct ToastCard: View {
     let line: String
     let onClose: () -> Void
+    @ObservedObject private var watch = SkinWatch.shared // drawn again when the skin changes
     var body: some View {
         let m = M(slim: true)
         HStack(alignment: .top, spacing: 0) {

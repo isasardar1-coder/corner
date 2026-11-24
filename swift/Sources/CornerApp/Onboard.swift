@@ -127,6 +127,7 @@ struct OnboardView: View {
     let demo: Bool
     let close: () -> Void
     @State private var shown = false
+    @ObservedObject private var watch = SkinWatch.shared // the card is made again when the skin changes
 
     static func fk(_ s: CGFloat) -> CGFloat { return (s * Fonts.k * 2).rounded() / 2 }
 
@@ -134,6 +135,7 @@ struct OnboardView: View {
         ZStack {
             if demo { T.backdrop }
             card
+                .id(watch.skin)
                 .padding(30)
                 .scaleEffect(shown || demo ? 1 : 0.94)
                 .opacity(shown || demo ? 1 : 0)
@@ -243,14 +245,14 @@ struct OnboardView: View {
                             Text(["Low", "Medium", "High"][i]).font(Fonts.ui(OnboardView.fk(12))).foregroundColor(on ? T.onStrong : T.text)
                         }
                         .padding(.leading, 11).padding(.trailing, 12).padding(.top, 6).padding(.bottom, 7)
-                        .background(Capsule().fill(on ? T.strong : T.field))
+                        .plate(on ? .strong : .field)
                         .contentShape(Capsule())
                         .onTapGesture { state.effort = lv }
                         .help(["Low", "Medium", "High"][i] + " effort")
                     }
                 }
                 HStack(spacing: 6) {
-                    MiniBox(text: $state.minutes, width: 26, surface: T.field) { state.addTyped() }
+                    MiniBox(text: $state.minutes, width: 26, surface: .field) { state.addTyped() }
                     Text("min").font(Fonts.ui(OnboardView.fk(12.5))).foregroundColor(T.muted)
                 }
                 .padding(.leading, 10)
@@ -293,7 +295,7 @@ struct OnboardView: View {
             bodyText("Next, tell it how you slept last night, and it will draw today's energy curve.")
             Text(summary).font(Fonts.ui(OnboardView.fk(12.5), true)).foregroundColor(T.text)
                 .padding(.horizontal, 14).padding(.top, 6).padding(.bottom, 7)
-                .background(Capsule().fill(T.soft))
+                .plate(.soft)
                 .padding(.top, 20)
         }
     }
@@ -333,8 +335,7 @@ struct ObRoutineRow: View {
                 .help("Remove")
         }
         .padding(.leading, 14).padding(.trailing, 10).padding(.top, 9).padding(.bottom, 10)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(T.field))
-        .overlay(Rim(radius: 14))
+        .plate(.field, radius: 14, rim: 14)
     }
 }
 
@@ -345,7 +346,7 @@ struct QuickPick: View {
     var body: some View {
         Text(text).font(Fonts.ui(OnboardView.fk(12))).foregroundColor(T.text)
             .padding(.horizontal, 12).padding(.top, 5).padding(.bottom, 6)
-            .background(Capsule().fill(hot ? T.field : T.lift))
+            .plate(hot ? .field : .lift)
             .contentShape(Capsule())
             .onHover { hot = $0 }
             .onTapGesture { action() }
@@ -358,9 +359,9 @@ struct ObButton: View {
     let action: () -> Void
     @State private var hot = false
     var body: some View {
-        Text(text).font(Fonts.ui(OnboardView.fk(14), main)).foregroundColor(main ? T.onAccent : T.text)
+        Text(text).font(Fonts.ui(OnboardView.fk(14), main)).foregroundColor(main ? T.onMain : T.text)
             .padding(.horizontal, main ? 26 : 18).padding(.top, 11).padding(.bottom, 12)
-            .background(Capsule().fill(main ? T.accent : (hot ? T.field : T.lift)))
+            .plate(main ? .main : (hot ? .field : .lift))
             .opacity(main && hot ? 0.9 : 1)
             .contentShape(Capsule())
             .onHover { hot = $0 }
@@ -391,7 +392,7 @@ struct ObInput: View {
     var body: some View {
         HintField(hint: hint, text: Binding(get: { text }, set: { text = String($0.prefix(60)) }), size: 16, focus: $focused, onSubmit: onSubmit)
             .padding(.horizontal, 18).padding(.top, 11).padding(.bottom, 12)
-            .background(Capsule().fill(T.field))
+            .plate(.field)
             .overlay(Capsule().strokeBorder(focused ? T.strong : Color.clear, lineWidth: 1.5))
             .onAppear { if autofocus { DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { focused = true } } }
     }
