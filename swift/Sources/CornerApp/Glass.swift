@@ -266,10 +266,8 @@ enum Backdrop {
         guard let g = CGGradient(colorsSpace: space, colors: colors as CFArray, locations: places) else { return }
         let rad: Double = degrees * Double.pi / 180
         let end = CGPoint(x: CGFloat(cos(rad)) * sw, y: CGFloat(sin(rad)) * sh)
-        ctx.saveGState()
-        ctx.clip(to: CGRect(x: 0, y: 0, width: sw, height: sh))
+        // (not cut to the screen: a panel's window reaches a little past the screen's edge)
         ctx.drawLinearGradient(g, start: CGPoint.zero, end: end, options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
-        ctx.restoreGState()
     }
 
     static func box(_ ctx: CGContext, _ hex: String, _ r: CGRect, _ radius: CGFloat = 0) {
