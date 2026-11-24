@@ -6,7 +6,7 @@ It uses Foundation only. The data files are the same as on Windows (`tasks.json`
 `routines.json`, `done.csv`, `days.csv`, `checkins.csv`, `profile.txt`), so they can be copied between a PC and a Mac.
 They live in `~/Library/Application Support/Corner`, or in the folder named by the `CORNER_DATA` environment variable.
 
-`CornerChecks` is the port of the Windows checks (78 of them, same names and order).
+`CornerChecks` is the port of the Windows checks (131 of them, same names and order; the Windows checks of its self-update have no counterpart here).
 
 ## Running the checks
 
@@ -43,6 +43,7 @@ The app is not notarised: the first time, right-click Corner.app and choose Open
 | --- | --- |
 | `main.swift` | Start-up: one running copy per data folder (a lock file), no Dock icon, `--demo`, `--icon`, `--peek` |
 | `Panel.swift` | The shell: menu-bar icon and menu, the borderless non-activating panel, the hot corner (polled 60 times a second), showing, hiding and peeking, Full Mode, moving the panel, Cmd + scroll, the timers, the test renders |
+| `Genie.swift` | The animations, ported from `Launch.cs`: the panel's picture flying out of its corner and back in as a funnel of thin slices (out of the app icon when Corner starts), the same between the corner panel and Full Mode, drawn in a see-through window that never takes a click; the parts that grow in under the pointer, the energy view sliding down under the chips, the energy % counting up; and the test renders that show them as frames |
 | `Model.swift` | `AppModel`: everything the card shows and does (tasks, timers, prompts, the energy curve, naps, Plan, routines, check-ins, the record), ported from the Windows `Shell` |
 | `WorkModel.swift` | More of `AppModel`, ported from the `Shell` half of `Work.cs` and `EnergyFeel.cs`: Plan by Schedule / Priority and the stopwatch, the work log (`work.csv`), the pause when the Mac sleeps, locks or sits idle, the order by priority, the habit chips, the energy % you can type over |
 | `CardView.swift` | The card: header, the corner panel and Full Mode bodies, the next task and its timer (a countdown, or by priority a stopwatch), the row of chips, the add box with the habit chips under it, the 1-10 check-in, the time's-up box |
@@ -73,3 +74,16 @@ in a skin with `CORNER_SKIN=0` to `4` (Sage, Glass, Metal, Ceramic, Paper), whic
 `CORNER_SKIN_TO` then changes the skin while the panel is on screen, as its pill in Settings does (`settings@0:2`,
 `demo-settings-skin0to2.png`): the picture should be the same as the one that started in that skin.
 A test render never pauses a task for being idle.
+
+Eight more modes show an animation as frames at fixed moments, side by side in one picture: `launch` and
+`launchclose` (out of the app icon as Corner starts, and back into it), `hoveropen` and `hoverclose` (out of the
+corner and back), `fullswitch` and `fullexit` (the corner panel flowing into Full Mode, and Full Mode going back
+down), `cycleopen` and `cycleclose` (the energy view sliding down under the chips, and folding up). Their clock is
+moved by hand, so the frames are the same on every run. Three more show an animation being cut short: `hoverback`
+(the pointer leaves while the panel is still flying out), `hoveragain` (it is opened again before it has gone back
+in) and `fullearly` (Full Mode entered while the panel is flying out); and `hoverbottom` is `hoveropen` from the
+bottom-left corner. Every other mode is a still picture: nothing moves in it.
+
+When Corner starts, the panel comes out of its icon, rests in its corner for a few seconds and goes back in, as on
+Windows. With "Reduce motion" on in System Settings the panel fades in and out as it did before and nothing flies
+or slides.

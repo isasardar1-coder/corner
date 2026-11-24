@@ -18,6 +18,9 @@ final class AppModel: ObservableObject {
     var full = false
     var shown = false
     var bare = false        // the corner panel opened on the next task alone; the pointer has not been on it yet
+    var revealK: CGFloat = 1   // how far the parts the pointer brings in have grown; 1 = in place (Genie.swift)
+    var cycleK: CGFloat = -1   // the energy view sliding down or folding up: how far it is open; -1 = not sliding
+    var countK: CGFloat = 1    // the energy % counting up; 1 = the whole number
     var promptOnly = false  // the panel shows nothing but a prompt that popped up by itself
     var rateNow = false     // "Rate now" was pressed
     var settingsOpen = false
@@ -228,13 +231,18 @@ final class AppModel: ObservableObject {
     /// The pointer came onto the panel: the header, the check-ins, the chips and the open list come in.
     func reveal() {
         if !bare { return }
+        if let fx = shell?.fx {
+            if !demoRun { fx.icon = false } // the pointer came onto the startup panel: it closes into its corner, without the icon
+            if fx.flyingOut { fx.revealWaiting = true; return } // still coming out as one picture: the rest grows when it has landed
+        }
         let was = isBare
         bare = false
         if !was || !shown { return }
         let now = AppModel.now()
         if SleepLog.needsCheckIn(now) { openCheckIn(edit: false) }
         showFeedback(now)
-        withAnimation(.easeOut(duration: 0.2)) { changed() }
+        // the parts grow in over 200 ms (Genie.swift); with "Reduce motion", and in a still test render, as before
+        if shell?.growIn() != true { withAnimation(.easeOut(duration: 0.2)) { changed() } }
         shell?.contentChanged()
     }
 
@@ -257,6 +265,7 @@ final class AppModel: ObservableObject {
     // ------------------------------------------------------------ tabs and settings
 
     func setTab(_ i: Int) {
+        shell?.fx.endCycle() // (a slide of the energy view that is under way ends here: Genie.swift)
         tab = i
         if i == 1 { drawEnergyPrep() }
         changed()

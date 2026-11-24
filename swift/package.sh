@@ -58,7 +58,8 @@ ls -la out
 # (CORNER_SKIN: 0 Sage, 1 Glass, 2 Metal, 3 Ceramic, 4 Paper), written to demo-settings-skin2.png; "settings@0:2"
 # starts in the first skin and changes to the second while it is on screen (CORNER_SKIN_TO), written to
 # demo-settings-skin0to2.png
-MODES="${DEMO_MODES:-tasks all adding energy settings checkin feedback timeup debt nap glass rest full fullenergy fullplan fullapplied fullroutines fullsettings priority paused order habits planning onboard0 onboard1 onboard2 onboard3 rise metal ceramic paper fullmetal fullceramic fullpaper}"
+# Those from "launch" on show an animation as frames side by side.
+MODES="${DEMO_MODES:-tasks all adding energy settings checkin feedback timeup debt nap glass rest full fullenergy fullplan fullapplied fullroutines fullsettings priority paused order habits planning onboard0 onboard1 onboard2 onboard3 rise metal ceramic paper fullmetal fullceramic fullpaper launch launchclose hoveropen hoverclose fullswitch fullexit cycleopen cycleclose hoverback hoveragain fullearly hoverbottom}"
 fail=0
 for entry in $MODES; do
   mode="${entry%@*}"
