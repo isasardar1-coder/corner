@@ -1,38 +1,43 @@
-## Corner 1.1.0
+## Corner 1.1.1
 
 Downloads: **Corner-Windows.zip** (Windows 10 and 11) and **Corner-Mac-Swift.zip** (Mac, Apple Silicon and Intel,
 macOS 12 or newer). The [README](https://github.com/isasardar1-coder/corner#readme) says how to open them the first time.
 
 ### How to update
 
-- **Windows, coming from 1.0.0:** download `Corner-Windows.zip`, quit Corner (right-click its tray icon), and put the
-  new `Corner.exe` in place of the old one. Keep your other files: your tasks and notes stay as they are.
-  This is the last time you do it by hand. From 1.1.0 on, Corner updates itself (Settings > Updates).
+- **Windows, from 1.1.0:** nothing to do. Corner fetches this version by itself and restarts once you are not using
+  it (Settings > Updates has "Check now").
+- **Windows, from 1.0.0:** download `Corner-Windows.zip`, quit Corner (right-click its tray icon), and put the new
+  `Corner.exe` in place of the old one. Keep your other files. From then on it updates itself.
 - **Mac:** download `Corner-Mac-Swift.zip` and replace Corner.app in Applications. Your tasks are kept.
   The first open needs the same step as before (see the README).
-- The two Avalonia Mac downloads (`Corner-Mac-AppleSilicon.zip`, `Corner-Mac-Intel.zip`) are gone. Use
-  `Corner-Mac-Swift.zip`.
 
-### New on Windows and Mac
+### Better at learning your day (Windows and Mac)
 
-- **Plan by priority.** Settings > Planning > "Plan by" now offers Schedule (each task gets a time, as before) or
-  Priority (tasks get an order, not a time). In Priority mode "Plan my day" proposes what comes after what, with a
-  reason for each task.
-- **Stopwatch.** In Priority mode, play on a task starts a stopwatch that counts up. Pause keeps the task where it
-  is, marked "Paused", until you start another or complete it. Past its planned length the time turns red.
-  Settings can hide the running time.
-- **Work log.** Every stretch of work is written to `work.csv`: start, length, and your energy at the start and the
-  end. Corner pauses the task by itself when the computer is locked, sleeps, or sits untouched for 10 minutes.
-- **Habits.** What you usually do in the morning, at noon, in the afternoon or in the evening is offered as
-  one-click chips under the add box, and moves up in the order.
-- **Type your energy.** Click the energy % to say how you really feel. Corner can fine-tune the chart from it.
-- **Smoother curve.** Your check-ins now reshape the curve only at wake, the peaks, the dip and bedtime, and ease in
-  between.
-- **New logo and icons.**
+- **Ticking a task off now counts.** "Usually this morning" and the order by priority used to learn only from tasks
+  you pressed play on. A task you simply tick off now counts for that part of the day too.
+- **Your peaks and dip can move.** Until now your 1-10 check-ins could lift or lower a peak or the dip. They can now
+  also move each one earlier or later, by up to 90 minutes, to where your check-ins put it. The curve keeps one even
+  hump on each side of the dip. Expect the times to shift by a few minutes as you add check-ins.
+- **An easy start.** By priority, while you are still groggy after waking, light tasks come first ("easy start while
+  you wake up") and the high-effort one waits for your peak, as it already did by schedule.
+- **Honest reasons.** A long task started near the end of a peak now says "your peak lasts until 11:35" where it used
+  to say "fits your peak".
 
-### New on Windows only
+### Fixed (Windows and Mac)
 
-- Corner updates itself from this page.
-- Opening, closing and switching to Full Mode are animated.
-- The corner panel opens on one line (task and timer) and shows the rest on hover. Full Mode has a new layout.
-- Metal, Ceramic and Paper skins beside Sage and Glass, and optional click sounds.
+- If the computer went to sleep or hibernated before Corner was told, the sleep could be logged as work, and a
+  countdown could run out meanwhile. The stretch now ends at the last second Corner saw you.
+- After an automatic pause (10 idle minutes), the countdown stands where it was when you left, not ten minutes on.
+- `done.csv` lost a task's timer minutes when Corner had been restarted in between.
+
+### New on the Mac
+
+- **Metal, Ceramic and Paper skins**, beside Sage and Glass: Settings > Panel > Look. The chosen tab, an on switch and
+  the waiting timer now take the colour of each skin's main button, as on Windows.
+- **Animations.** The panel flows out of its corner and back in, comes out of the app icon when Corner starts, and
+  flows into Full Mode and back. The parts that appear when the pointer comes onto the panel grow in, and the energy
+  view drops down under the chips. With "Reduce motion" on in System Settings, Corner keeps its short fade.
+
+These two were built and checked on GitHub's Mac, as pictures and frame by frame. Nobody has yet watched them on a
+Mac's own screen: if something flickers or sits in the wrong place, please say so.
