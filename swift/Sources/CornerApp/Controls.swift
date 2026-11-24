@@ -630,11 +630,12 @@ struct FitHeightKey: PreferenceKey {
 enum FitScrollFlag { static var plain = false }
 
 /// A vertical scroll view as tall as its content, up to maxHeight.
-/// What is inside is made again when the skin changes (its id is the skin), so that every part of it is drawn in
+/// What is inside is made again when the skin changes (its id is the skin's look), so that every part of it is drawn in
 /// the new colours; the scroll view itself stays, and with it how far it is scrolled.
 struct FitScroll<Content: View>: View {
     let maxHeight: CGFloat
     var skin: Int = T.skin // (kept: a FitScroll that is otherwise the same as before is not looked at again)
+    var look: Int = T.look // (the same number, but another when Glass goes from light to dark)
     @ViewBuilder let content: () -> Content
     @State private var h: CGFloat = 0
 
@@ -648,7 +649,7 @@ struct FitScroll<Content: View>: View {
             if FitScrollFlag.plain {
                 VStack(spacing: 0) {
                     content()
-                        .id(skin)
+                        .id(look)
                         .fixedSize(horizontal: false, vertical: true)
                         .background(GeometryReader { g in Color.clear.preference(key: FitHeightKey.self, value: g.size.height) })
                     Spacer(minLength: 0)
@@ -660,7 +661,7 @@ struct FitScroll<Content: View>: View {
             } else {
                 ScrollView(.vertical, showsIndicators: false) {
                     content()
-                        .id(skin)
+                        .id(look)
                         .background(GeometryReader { g in Color.clear.preference(key: FitHeightKey.self, value: g.size.height) })
                         .padding(.bottom, room)
                 }
@@ -687,30 +688,6 @@ struct CardBox<Content: View>: View {
             .padding(.vertical, padded ? m.padY : 0)
             .plate(surface, radius: m.radius, rim: m.radius)
     }
-}
-
-/// Glass only: the hairline round a box, bright at the top and faint at the bottom. Drawn by Plate (Material.swift).
-struct Rim: View {
-    let radius: CGFloat
-    var on: Bool = true
-    var body: some View {
-        if on && T.glass {
-            RoundedRectangle(cornerRadius: radius, style: .continuous)
-                .stroke(LinearGradient(colors: [Color(hex: "#B8FFFFFF"), Color(hex: "#5FDFEAF2")], startPoint: .top, endPoint: .bottom), lineWidth: 1)
-        }
-    }
-}
-
-/// NSVisualEffectView: the frosted Glass skin behind the card.
-struct Frost: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let v = NSVisualEffectView()
-        v.material = .hudWindow
-        v.blendingMode = .behindWindow
-        v.state = .active
-        return v
-    }
-    func updateNSView(_ v: NSVisualEffectView, context: Context) {}
 }
 
 extension View {

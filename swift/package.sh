@@ -58,23 +58,32 @@ ls -la out
 # (CORNER_SKIN: 0 Sage, 1 Glass, 2 Metal, 3 Ceramic, 4 Paper), written to demo-settings-skin2.png; "settings@0:2"
 # starts in the first skin and changes to the second while it is on screen (CORNER_SKIN_TO), written to
 # demo-settings-skin0to2.png
-# Those from "launch" on show an animation as frames side by side.
-MODES="${DEMO_MODES:-rest resttimeup tasks all adding habits energy timer timeup checkin feedback priority paused glass metal ceramic paper full fullenergy fullplan fullapplied fullstats fullswap debt nap fullroutines settings fullsettings planning order fullmetal fullceramic fullpaper onboard0 onboard1 onboard2 onboard3 rise all@2 energy@3 timeup@4 fullplan@3 fullapplied@2 fullstats@4 launch launchclose hoveropen hoverclose fullswitch fullexit cycleopen cycleclose hoverback hoveragain fullearly hoverbottom hoveropen@2 hoverclose@3 fullswitch@4}"
+# Glass (skin 1) is rendered over a drawn wallpaper: "all@1/dark" names it (CORNER_BACKDROP: light, dark or busy;
+# light when none is named), written to demo-all-skin1-dark.png. The glass is light or dark by what the wallpaper is
+# like behind the panel; a third part settles it by hand ("all@1/busy/dark", CORNER_GLASS: light or dark), written
+# to demo-all-skin1-busy-glassdark.png.
+# Those from "launch" to "fullswitch@4" show an animation as frames side by side.
+MODES="${DEMO_MODES:-rest resttimeup tasks all adding habits energy timer timeup checkin feedback priority paused glass metal ceramic paper full fullenergy fullplan fullapplied fullstats fullswap debt nap fullroutines settings fullsettings planning order fullmetal fullceramic fullpaper onboard0 onboard1 onboard2 onboard3 rise all@2 energy@3 timeup@4 fullplan@3 fullapplied@2 fullstats@4 launch launchclose hoveropen hoverclose fullswitch fullexit cycleopen cycleclose hoverback hoveragain fullearly hoverbottom hoveropen@2 hoverclose@3 fullswitch@4 all@1 energy@1 settings@1 timeup@1 rise@1 fullenergy@1 fullsettings@1 onboard0@1 all@1/dark energy@1/dark settings@1/dark timeup@1/dark rise@1/dark fullglass/dark fullenergy@1/dark onboard0@1/dark all@1/busy all@1/busy/dark fullenergy@1/busy fullenergy@1/busy/dark rise@1/busy settings@0:1 settings@0:1/dark hoveropen@1 fullswitch@1}"
 fail=0
-for entry in $MODES; do
+for whole in $MODES; do
+  entry="${whole%%/*}"
+  back=""
+  glass=""
+  if [ "$whole" != "$entry" ]; then back="${whole#*/}"; fi
+  case "$back" in */*) glass="${back#*/}"; back="${back%%/*}";; esac
   mode="${entry%@*}"
   skin=""
   to=""
   if [ "$entry" != "$mode" ]; then skin="${entry#*@}"; fi
   case "$skin" in *:*) to="${skin#*:}"; skin="${skin%:*}";; esac
   data="$(mktemp -d)"
-  png="$PWD/out/demo-$mode${skin:+-skin$skin}${to:+to$to}.png"
-  CORNER_DATA="$data" CORNER_SKIN="$skin" CORNER_SKIN_TO="$to" "$APP/Contents/MacOS/Corner" --demo "$png" "$mode" & pid=$!
+  png="$PWD/out/demo-$mode${skin:+-skin$skin}${to:+to$to}${back:+-$back}${glass:+-glass$glass}.png"
+  CORNER_DATA="$data" CORNER_SKIN="$skin" CORNER_SKIN_TO="$to" CORNER_BACKDROP="$back" CORNER_GLASS="$glass" "$APP/Contents/MacOS/Corner" --demo "$png" "$mode" & pid=$!
   for i in $(seq 1 45); do kill -0 $pid 2>/dev/null || break; sleep 1; done
   kill $pid 2>/dev/null || true
   wait $pid 2>/dev/null || true
-  if [ -s "$png" ]; then echo "rendered $entry"; else echo "no render: $entry"; fail=1; fi
-  [ -f "$data/error.log" ] && { echo "--- error.log ($entry)"; cat "$data/error.log"; }
+  if [ -s "$png" ]; then echo "rendered $whole"; else echo "no render: $whole"; fail=1; fi
+  [ -f "$data/error.log" ] && { echo "--- error.log ($whole)"; cat "$data/error.log"; }
   rm -rf "$data"
 done
 exit $fail

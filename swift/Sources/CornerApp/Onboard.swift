@@ -74,6 +74,7 @@ final class OnboardController {
         w.center()
         w.onEscape = { [weak self] in self?.finish() }
         window = w
+        if GlassLook.adapt(w.frame.insetBy(dx: 30, dy: 30)) { model.changed() } // Glass: light or dark
         w.makeKeyAndOrderFront(nil)
         if !model.demoRun { NSApp.activate(ignoringOtherApps: true) }
     }

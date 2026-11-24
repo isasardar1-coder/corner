@@ -24,7 +24,7 @@ struct CardView: View {
         VStack(alignment: .leading, spacing: 0) {
             if showHeader {
                 HeaderView()
-                    .id(T.skin) // made again when the skin changes, as what scrolls under it is (FitScroll)
+                    .id(T.look) // made again when the skin changes, as what scrolls under it is (FitScroll)
                     .background(GeometryReader { g in Color.clear.preference(key: HeaderHeightKey.self, value: g.size.height) })
                     .modifier(model.grow(.header)) // grows in when the pointer comes onto the panel (Genie.swift)
             }
@@ -45,21 +45,25 @@ struct CardView: View {
     }
 }
 
-/// The panel itself: pale sage with a darker edge; or (Glass) the frosted view of what is behind under a cool tint;
-/// or (Metal, Ceramic, Paper) the skin's sheet: a brushed plate, a slab of stoneware, a card with a grain
+/// The panel itself: pale sage with a darker edge; or (Glass) a sheet of clear glass over what is behind it,
+/// light or dark (GlassSheet, Glass.swift); or (Metal, Ceramic, Paper) the skin's sheet: a brushed plate, a slab of stoneware, a card with a grain
 /// (Material.swift). The notice and the welcome window are made of the same.
 struct PanelBackground: View {
     let radius: CGFloat
     var skin: Int = T.skin // (kept, so that a change of skin draws it again)
+    var dark: Bool = T.dark // (and a change from light glass to dark)
     var body: some View {
+        if skin == 1 {
+            GlassSheet(radius: radius, dark: dark)
+        } else {
+            sheet
+        }
+    }
+
+    var sheet: some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: skin >= 2 ? .circular : .continuous)
-        ZStack(alignment: .top) {
-            if skin == 1 {
-                Frost().clipShape(shape)
-                shape.fill(T.glassTint)
-                T.glassSheen.frame(height: 54).clipShape(shape)
-                shape.stroke(T.glassRim, lineWidth: 1)
-            } else if skin >= 2 {
+        return ZStack(alignment: .top) {
+            if skin >= 2 {
                 shape.fill(T.bg)
                 SheetGrain(skin: skin, radius: radius)
             } else {

@@ -52,8 +52,9 @@ The app is not notarised: the first time, right-click Corner.app and choose Open
 | `SettingsView.swift` | The morning sleep check-in and the Settings page, opened from Full Mode (planning, panel with "Full Mode sides", energy, your record, sleep history) |
 | `Toast.swift` | The energy notices: a card at the panel's corner with `ping.wav` |
 | `Onboard.swift` | The welcome window on the very first start |
+| `Glass.swift` | The Glass skin as Liquid Glass, ported from the Windows `Glass.cs`: the sheet a panel is made of (the system's live blur of what is behind the window, a thin veil, a glow from the edge, two hairlines lit from the top left), the glow, rim and gloss of the boxes on it, light or dark glass, and the drawn wallpapers of the test renders |
 | `Controls.swift` | Shared pieces: glyphs drawn from the Windows path strings, buttons, chips, switches, text boxes, time entry, flow layout |
-| `Theme.swift` | The colours of the five skins (Sage, Glass, Metal, Ceramic, Paper; `Skin` in `settings.json` is 0 to 4, as on Windows), Gilroy, and the grid of sizes and insets |
+| `Theme.swift` | The colours of the five skins (Sage, Glass, Metal, Ceramic, Paper; `Skin` in `settings.json` is 0 to 4, as on Windows; Glass has a second set for dark glass), Gilroy, and the grid of sizes and insets |
 | `Material.swift` | The depth of Metal, Ceramic and Paper, ported from the Windows `Material.cs`: the panel's sheet, trays pressed in, cards and pills raised, with their grain, bevel, gloss and layered shadows (no blur). Also `Plate`, the one place every box of every skin is drawn |
 | `Platform.swift` | Idle time, the sound, notifications, Finder, the login item (a LaunchAgent) |
 | `Icon.swift` | The menu-bar icon and the app icon |
@@ -79,6 +80,22 @@ in a skin with `CORNER_SKIN=0` to `4` (Sage, Glass, Metal, Ceramic, Paper), whic
 `package.sh` that is written `settings@2` in `DEMO_MODES`, and the picture is `demo-settings-skin2.png`.
 `CORNER_SKIN_TO` then changes the skin while the panel is on screen, as its pill in Settings does (`settings@0:2`,
 `demo-settings-skin0to2.png`): the picture should be the same as the one that started in that skin.
+
+Glass is Liquid Glass, as on Windows: clear glass with a bright double rim, its boxes thin layers of white, light
+glass with dark text or dark glass with white text. What is behind it is the system's own blur of whatever is behind
+the window (`NSVisualEffectView`), which stays live; the screen is never read, so Corner needs no screen-recording
+permission. For the same reason it cannot measure how light the desktop is, as Windows does: on a Mac the glass is
+dark when macOS is in Dark Mode and light otherwise, settled each time the panel, the notice or the welcome window
+opens. The picture bent inwards at the rim is not ported.
+
+A test render cannot show the live blur, so Glass is rendered over a drawn wallpaper, which the glass shows as
+Windows shows the screen (blurred, more colourful, evened out for reading). `CORNER_BACKDROP=light`, `dark` or
+`busy` (windows full of text) chooses it, `light` when it is not set; in a test render the glass is light or dark by
+how light the wallpaper is behind the panel (dark below 30%, as on Windows), or as `CORNER_GLASS=light` or `dark`
+says. Both are read in a test render only. In `package.sh`, `all@1/dark` is a mode in Glass over the dark wallpaper
+(`demo-all-skin1-dark.png`) and `all@1/busy/dark` is dark glass over the busy one
+(`demo-all-skin1-busy-glassdark.png`). The other skins are rendered on sand, as before, and so are the frames of an
+animation, where a flat fill stands in for the blur as it does in the animations themselves.
 A test render never pauses a task for being idle.
 
 Eight more modes show an animation as frames at fixed moments, side by side in one picture: `launch` and

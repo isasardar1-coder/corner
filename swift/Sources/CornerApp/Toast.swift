@@ -80,6 +80,7 @@ final class ToastController {
         host.frame = NSRect(x: 0, y: 0, width: ww, height: wh)
         w.contentView = host
         window = w
+        if GlassLook.adapt(w.frame.insetBy(dx: ToastController.margin, dy: ToastController.margin)) { model.changed() } // Glass: light or dark
 
         let end = w.frame
         if model.demoRun {
