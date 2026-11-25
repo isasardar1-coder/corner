@@ -54,8 +54,8 @@ copy them between a PC and a Mac.
 The Mac app follows the Windows app. It has the same tasks, energy curve, planning (by schedule or by priority),
 stopwatch, work log and habits, the same five skins (Sage, Glass, Metal, Ceramic, Paper) and the same opening
 animations, the same corner panel and Full Mode layouts, and reads the same data files.
-Its Glass skin uses the Mac's own blur behind the panel and is dark when macOS is in Dark Mode (on Windows it is dark
-over a dark part of the screen).
+Its Glass skin uses the Mac's own blur behind the panel. It is dark over a dark wallpaper; over other windows, or a
+wallpaper it cannot read, it follows Dark Mode (on Windows it is dark over a dark part of the screen).
 
 Every push is built and checked on GitHub's Windows and Mac machines (see the Actions tab). Pushing a tag such as
 `v1.1.0` publishes a new release with both downloads.
