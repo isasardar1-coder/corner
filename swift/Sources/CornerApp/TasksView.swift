@@ -38,11 +38,10 @@ struct PlanSpan {
 let planStripW: CGFloat = 18
 
 /// The white card holding every task. In the corner panel the done tasks are under the open ones; Full Mode shows
-/// them in the energy column (DoneCard), and there the rows scroll inside the card when they need more than `scrollMax`.
+/// them in the energy column (DoneCard), and there the whole card scrolls (FullTasks).
 struct TaskListCard: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.m) var m
-    var scrollMax: CGFloat? = nil
     @State private var dragId: String? = nil
     @State private var dragDY: CGFloat = 0
     @State private var heights: [String: CGFloat] = [:]
@@ -52,13 +51,8 @@ struct TaskListCard: View {
         let done: [TaskItem] = model.full ? [] : model.data.tasks.filter { $0.done }.sorted { ($0.doneAt ?? "") > ($1.doneAt ?? "") }
         let anyDone: Bool = model.data.tasks.contains { $0.done }
         let hp: CGFloat = m.padX - rowOver
-        Group {
-            if let mx = scrollMax {
-                FitScroll(maxHeight: mx) { rows(active, done, anyDone).padding(.horizontal, hp) }
-            } else {
-                rows(active, done, anyDone).padding(.horizontal, hp)
-            }
-        }
+        rows(active, done, anyDone)
+        .padding(.horizontal, hp)
         .padding(.vertical, m.sp(8, 6))
         .frame(maxWidth: .infinity, alignment: .leading)
         .plate(.field, radius: m.radius, rim: m.radius)
