@@ -135,7 +135,6 @@ enum Behind {
         let d = f(mix(right, half, scr, 600, [CGRect(x: 600, y: 100, width: 400, height: 200)], true))
         let here = f(light(CGRect(x: 100, y: 100, width: 300, height: 300), systemDark: GlassLook.systemDark))
         return "behind: left " + a + ", right " + b + ", left under a light window " + c + ", right under a dark window " + d
-            + ", here " + here + " from " + (NSScreen.screens.first.flatMap { NSWorkspace.shared.desktopImageURL(for: $0)?.path } ?? "none")
-            + (kept.map { " " + String($0.w) + "x" + String($0.h) + " max " + f($0.light.max() ?? -1) } ?? " unread") + ", windows " + String(windows().count)
+            + ", here " + here + ", windows " + String(windows().count)
     }
 }
