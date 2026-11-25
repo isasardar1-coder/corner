@@ -22,6 +22,7 @@ enum Behind {
     static func mayRead(_ p: String) -> Bool {
         let home = NSHomeDirectory()
         if p.contains(".photoslibrary") { return false }
+        if p.hasPrefix("/System/Library/CoreServices/") { return false } // a stand-in, not what is on the screen
         for ok in ["/System/Library/", "/Library/", home + "/Library/Application Support/com.apple", home + "/Pictures/"] {
             if p.hasPrefix(ok) { return true }
         }
