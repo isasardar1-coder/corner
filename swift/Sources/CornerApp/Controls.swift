@@ -184,6 +184,8 @@ enum Icons {
     static let moon = "M11.5,8.5 A5,5 0 0 1 5.5,2.5 A5,5 0 1 0 11.5,8.5 Z"
     static let debt = "M7,2 A5,5 0 1 1 6.99,2 Z M4.5,7 H9.5"
     static let bed = "M1.5,10.5 V4.5 M1.5,8 H12.5 V10.5 M12.5,8 V6.5 A2,2 0 0 0 10.5,4.5 H6 V8"
+    static let nap = "M2.5,6 H7 L2.5,11.5 H7 M8.5,2 H11.5 L8.5,5.5 H11.5"
+    static let rate = "M2.6,11 A5.6,5.6 0 1 1 11.4,11 M7,8.2 L9.6,5.2"
     static let smallTick = "M1.5,5.5 L4,8 L8.5,2"
     static let smallPlus = "M5,1 V9 M1,5 H9"
 }

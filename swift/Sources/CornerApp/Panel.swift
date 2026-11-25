@@ -696,6 +696,13 @@ final class PanelController: NSObject, NSMenuDelegate {
 
     func demoSeed(_ mode: String) {
         if mode == "prompt" { model.promptOnly = true }
+        if mode == "secmove" { // some sections moved: the chart on top of the list, the add box and the plan into the energy column
+            Sec.move(Sec.chart, 0, before: Sec.list)
+            Sec.move(Sec.add, 1, before: Sec.stats)
+            Sec.move(Sec.plan, 1, before: -1)
+        }
+        if mode == "secmix" { Sec.move(Sec.list, 1, before: Sec.routines); Sec.move(Sec.stats, 0, before: Sec.add) }
+        if mode == "secall" { for k in Sec.chart..<Sec.count { Sec.move(k, 0, before: -1) } }
         if mode == "swap" { Settings.set("SwapSides", 1) } // Full Mode with the energy column on the left
         let byPriority = mode == "priority" || mode == "paused" || mode == "order" || mode == "planning"
         if byPriority { Settings.set("PlanBy", 1) }
@@ -743,6 +750,15 @@ final class PanelController: NSObject, NSMenuDelegate {
         case "stats": model.statOpen[0] = true; model.statOpen[2] = true // Slept and Need open, as "statsopen" on Windows
         case "debt": model.statOpen[1] = true; model.debtOpen = true
         case "settings": model.toggleSettings()
+        case "grips": model.showGrips = true
+        case "napform": model.napOpen = true; model.statOpen[0] = true; model.statOpen[2] = true
+        case "secdrag", "secdrop": // a section held, or let go, over the add box
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
+                guard let mo = self?.model, let f = mo.secDrag.frames[Sec.routines], let to = mo.secDrag.frames[Sec.add] else { Store.log("no section frames"); return }
+                mo.secDrag.begin(Sec.routines, CGPoint(x: f.maxX - 8, y: f.minY + 15), mo)
+                mo.secDrag.drag(CGPoint(x: to.maxX - 40, y: to.minY - 4), mo)
+                if mode == "secdrop" { mo.secDrag.end(drop: true, mo) }
+            }
         case "feedback": model.rateNowPressed()
         case "timer":
             if let t = model.upcoming().first { model.startTimer(t); model.timerEnd = model.timerEnd.addingTimeInterval(-754) }

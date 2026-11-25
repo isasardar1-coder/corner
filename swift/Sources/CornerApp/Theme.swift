@@ -104,6 +104,8 @@ enum T {
     // the dark colour: a chip whose list or page is open, and the prompts that need an answer. On dark glass it
     // is white, with dark text on it
     static var strong: Color { return p("#16281D", "#EB132A40", "#E0F4F8FF", "#0F2416", "#132717", "#1E3721") }
+    /// The logo in the header, a line drawing.
+    static var ink: Color { return p("#2A5238", "#EB132A40", "#F4F8FF", "#3C4248", "#46664B", "#2F6596") }
     static var onStrong: Color { return p("#FFFFFF", "#FFFFFF", "#0E1A26", "#FFFFFF", "#FFFFFF", "#FFFFFF") }
     static var onStrongSoft: Color { return p("#C9D3BE", "#CFE3F0", "#B8152433", "#C3CEC4", "#C9D3BE", "#C5D2C6") }
     static var strongLine: Color { return p("#7C8C7D", "#73BFE6F2", "#59152433", "#6F8273", "#7C8C7D", "#7E9482") }

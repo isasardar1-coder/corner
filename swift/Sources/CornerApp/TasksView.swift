@@ -38,7 +38,7 @@ struct PlanSpan {
 let planStripW: CGFloat = 18
 
 /// The white card holding every task. In the corner panel the done tasks are under the open ones; Full Mode shows
-/// them in the energy column (DoneCard), and there the whole card scrolls (FullTasks).
+/// them in a section of their own (DoneCard), and there the whole card scrolls (Sections.swift).
 struct TaskListCard: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.m) var m

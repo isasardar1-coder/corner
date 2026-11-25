@@ -182,6 +182,8 @@ final class AppModel: ObservableObject {
         changed()
     }
     var dragging = false
+    let secDrag = SectionDrag() // Full Mode's sections (Sections.swift)
+    var showGrips = false       // test renders: every section's dots
 
     // ------------------------------------------------------------ text size
 

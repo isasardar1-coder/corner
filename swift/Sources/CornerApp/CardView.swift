@@ -98,18 +98,15 @@ struct HeaderView: View {
         let open = model.openCount
         let all = model.data.tasks.count
         let count = open > 0 ? String(open) + " open" : (all > 0 ? "all done" : "")
-        // Full Mode: back, the day and date, then the ring, the gear and Close. The corner panel: the ring, Full Mode
-        // and Close alone (settings are opened from Full Mode).
+        // Full Mode: back, the logo, then the ring, the gear and Close. The corner panel: the logo, the ring, Full
+        // Mode and Close (settings are opened from Full Mode). The day, the date and what is open: the logo's tip.
         HStack(alignment: .center, spacing: 0) {
             if model.full {
                 HeadIcon(d: Icons.back, th: 1.5, size: 10, tip: "Back to the corner", cell: cell) { model.shell?.exitFull() }
                     .padding(.trailing, 12)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(HeaderView.fmt("EEEE", now)).font(m.head(22)).foregroundColor(T.text)
-                    Text(HeaderView.fmt("MMMM d", now) + (count.isEmpty ? "" : "  ·  " + count))
-                        .font(m.font(12)).foregroundColor(T.muted).lineLimit(1)
-                }
             }
+            HeadLogo(scale: m.sp(1, 0.78), tip: HeaderView.fmt("EEEE, MMMM d", now) + (count.isEmpty ? "" : "  ·  " + count))
+                .padding(.leading, model.full ? 0 : m.padX)
             Spacer(minLength: 8)
             HStack(spacing: m.sp(6, 4)) {
                 RingDisc(cell: cell)
@@ -222,97 +219,14 @@ struct CornerBody: View {
     }
 }
 
-// ---------------------------------------------------------------- Full Mode: two equal columns
-
-/// The tasks column and the energy column, side by side ("Full Mode sides" in Settings swaps them).
-struct FullBody: View {
-    @EnvironmentObject var model: AppModel
-    @Environment(\.m) var m
-    let maxHeight: CGFloat
-
-    var body: some View {
-        let swapped: Bool = model.swapped
-        HStack(alignment: .top, spacing: 0) {
-            if swapped {
-                FullEnergy(maxHeight: maxHeight, swapped: true)
-                FullTasks(maxHeight: maxHeight, swapped: true)
-            } else {
-                FullTasks(maxHeight: maxHeight, swapped: false)
-                FullEnergy(maxHeight: maxHeight, swapped: false)
-            }
-        }
-    }
-}
-
 struct UsedHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value += nextValue() }
 }
 
-/// The tasks column: the prompts, the open tasks, the add box, then the plan. The list takes the room the others
-/// leave and its card scrolls when it needs more; the plan may take up to half (FitStack in FullLayout.cs).
-struct FullTasks: View {
-    @EnvironmentObject var model: AppModel
-    @Environment(\.m) var m
-    let maxHeight: CGFloat
-    let swapped: Bool
-    @State private var used: CGFloat = 0
-
-    var body: some View {
-        let gap: CGFloat = m.gapY
-        let avail: CGFloat = maxHeight - m.side
-        let planMax: CGFloat = max(120, avail * 0.5)
-        let listMax: CGFloat = max(60, avail - used)
-        let side: CGFloat = T.skin >= 2 ? 8 : 0 // the list's card: room beside it for its shadow (a made skin)
-        let over: CGFloat = 8 // room inside the plan's scrolling part for its card's shadow (a made skin)
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 0) {
-                if model.checkInOpen { CheckInView().padding(.bottom, gap) }
-                if model.feedbackOpen { FeedbackView().padding(.bottom, gap) }
-                if model.alertTask != nil { AlertView().padding(.bottom, gap) }
-            }
-            .background(GeometryReader { g in Color.clear.preference(key: UsedHeightKey.self, value: g.size.height) })
-            FitScroll(maxHeight: listMax, round: m.radius, inset: side) { TaskListCard().padding(.horizontal, side) }
-                .padding(.horizontal, -side)
-            VStack(alignment: .leading, spacing: 0) {
-                AddBox().padding(.top, gap)
-                FitScroll(maxHeight: planMax) {
-                    PlanCard().padding(.top, gap).padding(.horizontal, over)
-                }
-                .padding(.horizontal, -over)
-            }
-            .background(GeometryReader { g in Color.clear.preference(key: UsedHeightKey.self, value: g.size.height) })
-        }
-        .onPreferenceChange(UsedHeightKey.self) { v in if abs(v - used) > 0.5 { used = v } }
-        .padding(.leading, swapped ? m.sideMid : m.side)
-        .padding(.trailing, swapped ? m.side : m.sideMid)
-        .padding(.bottom, m.side)
-        .frame(width: fullW / 2, alignment: .top)
-    }
-}
-
-/// The energy column: the next task with its timer, the chart, slept / debt / need, nap and rate, routines, then
-/// the done tasks (EnergyView.swift). It scrolls as one.
-struct FullEnergy: View {
-    @EnvironmentObject var model: AppModel
-    @Environment(\.m) var m
-    let maxHeight: CGFloat
-    let swapped: Bool
-
-    var body: some View {
-        FitScroll(maxHeight: maxHeight - m.side) {
-            EnergyView()
-                .padding(.leading, swapped ? m.side : m.sideMid)
-                .padding(.trailing, swapped ? m.sideMid : m.side)
-        }
-        .padding(.bottom, m.side)
-        .frame(width: fullW / 2, alignment: .top)
-    }
-}
-
 // ---------------------------------------------------------------- the next task
 
-/// The next task, one line in both modes: its circle, the task, large, and its timer as a pill at the end.
+/// The corner panel's next task, one line: its circle, the task, large, and its timer as a pill at the end.
 /// A small line above it says "Now" or "Paused" while it is being timed (with "Reset" at its far end), and by
 /// priority why this one is next. At rest (the corner panel before the pointer comes) it is the one line alone.
 struct FocusView: View {
@@ -464,8 +378,14 @@ struct TimerPill: View {
         .contentShape(Capsule())
         .onHover { hot = $0 }
         .onTapGesture { model.timerClick(t) }
-        .help(k.tip)
+        .contextMenu {
+            // a timer that has been started can be put back to the task's full length (the corner panel's next task says "Reset")
+            if canReset { Button("Reset to " + String(AppModel.durationMin(t)) + " min") { model.resetTimer() } }
+        }
+        .help(canReset ? k.tip + "  (right-click: reset)" : k.tip)
     }
+
+    var canReset: Bool { return !big && model.timerId == t.id && !AppModel.priorityMode }
 
     func look() -> PillLook {
         var k = PillLook()

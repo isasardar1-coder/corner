@@ -1,7 +1,7 @@
 // Corner for macOS - the Energy side. In the corner panel it is the chart alone, in its tray (zones, sleep, naps,
-// now, the cursor, scrolling). In Full Mode it is a column: the next task, the chart, three round icons that open
-// the sleep figures, the suggested sleep need, the sleep debt calculator, naps and "Rate now", a slim Routines bar
-// and a slim Done bar. The plan card stands in the tasks column (CardView.swift). Port of DrawEnergy, DrawNeedHint,
+// now, the cursor, scrolling). Full Mode has more sections (Sections.swift): five round icons (the sleep figures,
+// "Log a nap" and "Rate your energy now") with what they open, the suggested sleep need, the sleep debt calculator
+// and naps under them; a slim Routines bar; a slim Done bar; and the plan card. Port of DrawEnergy, DrawNeedHint,
 // DrawNaps, DrawPlan and DrawRoutines (UiEnergy.cs), AddChart and DrawDebt (UiSleep.cs), DrawOrderPlan (Work.cs),
 // DrawDoneCard and FillDone (FullLayout.cs).
 import AppKit
@@ -14,19 +14,8 @@ struct EnergyView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: m.gapY) {
-            if model.full { FocusView() } // the next task and its timer sit above the chart
             if let e = model.energy {
                 CurveTray(e: e)
-                if model.full {
-                    // the corner panel stops at the chart; the figures, naps, rating and routines are Full Mode's
-                    StatIcons()
-                    if model.statOpen.contains(true) { StatsRow(e: e) }
-                    NeedHintCard(e: e)
-                    if model.debtOpen && model.statOpen[1] { DebtCard(e: e) }
-                    NapsBlock(e: e)
-                    RoutinesCard()
-                    DoneCard()
-                }
             } else {
                 CardBox(surface: .tray) {
                     Text("Enter last night's sleep to see today's curve.")
@@ -34,7 +23,6 @@ struct EnergyView: View {
                         .padding(.bottom, 10)
                     HStack { Btn(text: "Enter sleep", kind: 0) { model.openCheckIn(edit: false) }; Spacer() }
                 }
-                if model.full { RoutinesCard() } // (the done tasks come with the chart, as on Windows)
             }
         }
     }
@@ -442,20 +430,31 @@ struct HoverX: ViewModifier {
 
 // ---------------------------------------------------------------- slept / debt / need
 
-/// Full Mode: the three figures are round icons until clicked; each opens its own box underneath, and closes it again.
+/// Full Mode: the three figures are round icons until clicked; each opens its own box underneath, and closes it
+/// again. Midway between them stand the nap icon and the rating.
 struct StatIcons: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.m) var m
 
     var body: some View {
-        let icons: [String] = [Icons.moon, Icons.debt, Icons.bed]
-        let names: [String] = ["Slept", "Debt", "Need"]
-        HStack(alignment: .center, spacing: m.sp(8, 6)) {
-            ForEach(0..<3, id: \.self) { i in
-                // each in the middle of its third
-                RoundChip(d: icons[i], on: model.statOpen[i], tip: names[i]) { toggle(i) }
-                    .frame(maxWidth: .infinity)
+        let gap: CGFloat = m.sp(8, 6)
+        GeometryReader { g in
+            let third: CGFloat = (g.size.width - 2 * gap) / 3
+            let step: CGFloat = (third + gap) / 2
+            ForEach(0..<5, id: \.self) { i in
+                icon(i).position(x: third / 2 + CGFloat(i) * step, y: 15) // a figure is in the middle of its third
             }
+        }
+        .frame(height: 30)
+    }
+
+    @ViewBuilder func icon(_ i: Int) -> some View {
+        switch i {
+        case 0: RoundChip(d: Icons.moon, on: model.statOpen[0], tip: "Slept") { toggle(0) }
+        case 1: RoundChip(d: Icons.nap, on: model.napOpen, tip: model.napOpen ? "Close" : "Log a nap") { model.napOpen.toggle(); model.changed(); model.shell?.contentChanged() }
+        case 2: RoundChip(d: Icons.debt, on: model.statOpen[1], tip: "Debt") { toggle(1) }
+        case 3: RoundChip(d: Icons.rate, on: false, tip: "Rate your energy now") { model.rateNowPressed() }
+        default: RoundChip(d: Icons.bed, on: model.statOpen[2], tip: "Need") { toggle(2) }
         }
     }
 
@@ -715,17 +714,18 @@ struct DebtCard: View {
 
 // ---------------------------------------------------------------- naps
 
+/// What the nap icon opens, the naps logged today, and the offer to plan again after one.
 struct NapsBlock: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.m) var m
     let e: EnergyDay
 
+    static func shown(_ model: AppModel, _ e: EnergyDay) -> Bool {
+        return model.napOpen || !e.naps.isEmpty || (model.napOffer && !AppModel.priorityMode)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: m.gapY) {
-            HStack(spacing: m.sp(8, 6)) {
-                Btn(text: model.napOpen ? "Close" : "Log a nap", kind: 1, stretch: true) { model.napOpen.toggle(); model.changed(); model.shell?.contentChanged() }
-                Btn(text: "Rate now", kind: 1, stretch: true) { model.rateNowPressed() }
-            }
             if model.napOpen {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {

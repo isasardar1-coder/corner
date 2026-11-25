@@ -186,6 +186,9 @@ struct PanelSettings: View {
                         model.shell?.contentChanged()
                     }
                 }.any(),
+                SettingLine(title: "Full Mode sections", sub: "Drag one by the dots at its right edge") {
+                    Btn(text: "Reset", kind: 1, on: 1) { Sec.reset(); model.changed(); model.shell?.contentChanged() }
+                }.any(),
                 SettingLine(title: "Panel position", sub: "Drag the header to move it") {
                     Btn(text: "Reset", kind: 1, on: 1) { model.shell?.resetPosition(); model.changed() }
                 }.any(),
