@@ -25,11 +25,11 @@ namespace Corner
         void BeginCard(Brush surface)
         {
             var sp = new StackPanel();
-            energyView.Children.Add(new RimBorder { CornerRadius = new CornerRadius(Radius), Background = surface, Padding = new Thickness(PadX, PadY, PadX, PadY), Margin = new Thickness(0, 0, 0, GapY), Child = sp });
+            Into.Children.Add(new RimBorder { CornerRadius = new CornerRadius(Radius), Background = surface, Padding = new Thickness(PadX, PadY, PadX, PadY), Margin = new Thickness(0, 0, 0, GapY), Child = sp });
             sect = sp;
         }
 
-        void EndCard() { sect = energyView; }
+        void EndCard() { sect = Into; }
 
         void BuildEnergyTop(DockPanel dock)
         {
@@ -224,11 +224,10 @@ namespace Corner
             energyView.Children.Clear();
             if (planHost != null) planHost.Children.Clear();
             doneHost = null; doneCard = null;
-            sect = energyView;
+            ClearSections(); ToSection(SecChart); // Full Mode: each part is drawn into its own moveable section (FullLayout.cs)
             // boxes start Side in from the panel's edge (SideMid on the side that faces the tasks column in Full Mode);
             // every block ends with a gap of GapY, which the last one gives back
             energyView.Margin = new Thickness(TaskR, 0, TaskL, -GapY); // the mirror of the tasks column
-            if (FullArranged) FocusOnTop(); // Full Mode: the next task and its timer sit above the chart (FullLayout.cs)
             chartPins.Clear();
             if (energy == null)
             {
@@ -238,6 +237,7 @@ namespace Corner
                 sect.Children.Add(w);
                 EndCard();
                 if (full) DrawRoutines(); // routines stay editable before any sleep is entered (Full Mode only)
+                ShowSections();
                 return;
             }
 
@@ -344,6 +344,7 @@ namespace Corner
             EndCard();
             if (!full) return; // the corner panel is the chart alone; the figures, naps, rating, the plan and routines are in Full Mode
 
+            ToSection(SecStats);
             // slept / debt / need
             var night = energy.Last;
             string sleptSub = night.Sleep.Count > 1 ? night.Sleep.Count + " periods" : EnergyDay.Clock(night.Sleep[0].From) + "–" + EnergyDay.Clock(night.Sleep[0].To);
@@ -358,14 +359,22 @@ namespace Corner
             if (full)
             {   // Full Mode: the three figures are icons until clicked; each opens its own box underneath, and closes it again
                 string[] statNames = { "Slept", "Debt", "Need" };
-                var icons = new UniformGrid { Columns = 3, Margin = new Thickness(-Sp(4, 3), 0, -Sp(4, 3), GapY) };
+                // five icons, evenly spaced: nap and rate stand halfway between the figures' icons, which stay over their boxes
+                var icons = new Grid { Margin = new Thickness(-Sp(4, 3), 0, -Sp(4, 3), GapY) };
+                for (int i = 0; i < 6; i++) icons.ColumnDefinitions.Add(new ColumnDefinition());
+                Action<FrameworkElement, int> put = (chip, sixth) =>
+                {
+                    chip.HorizontalAlignment = HorizontalAlignment.Center; chip.Height = 30; chip.Margin = new Thickness(0);
+                    Grid.SetColumn(chip, sixth); Grid.SetColumnSpan(chip, 2); icons.Children.Add(chip); // centred on the line between two sixths
+                };
                 for (int i = 0; i < 3; i++)
                 {
                     int k = i;
                     var chip = RoundChip(statIcons[i], statOpen[i], statNames[i], () => { statOpen[k] = !statOpen[k]; if (k == 1 && !statOpen[1]) debtOpen = false; DrawEnergy(); });
-                    chip.HorizontalAlignment = HorizontalAlignment.Center; chip.Height = 30; chip.Margin = new Thickness(0); // each in the middle of its third
-                    icons.Children.Add(chip);
+                    put(chip, i * 2);
                 }
+                put(RoundChip("M2.5,6 H7 L2.5,11.5 H7 M8.5,2 H11.5 L8.5,5.5 H11.5", napOpen, napOpen ? "Close" : "Log a nap", () => { napOpen = !napOpen; DrawEnergy(); }), 1);
+                put(RoundChip("M2.6,11 A5.6,5.6 0 1 1 11.4,11 M7,8.2 L9.6,5.2", false, "Rate your energy now", () => { rateNow = true; ShowFeedback(Now()); }), 3);
                 sect.Children.Add(icons);
             }
             Func<int, bool> showStat = i => !full || statOpen[i];
@@ -396,6 +405,7 @@ namespace Corner
 
             // "I usually wake for Fajr", Tuning and Clock are on the Settings page (Ui.cs)
             DrawPlan(now);
+            ShowSections();
         }
 
         /// The sleep need your check-ins point to (Need.cs), offered once it differs from the setting by 15 minutes or more.
@@ -421,17 +431,10 @@ namespace Corner
 
         // ------------------------------------------------------------ naps
 
-        /// "Log a nap" and "Rate now", the day's logged naps, the nap form and the re-plan offer.
+        /// Under the icons: the nap form, the day's logged naps and the re-plan offer.
         void DrawNaps(DateTime now)
         {
             var day = SleepLog.Today(now);
-            var acts = new UniformGrid { Columns = 2, Margin = new Thickness(-Sp(4, 3), 0, -Sp(4, 3), 0) }; // two halves, split where the three figures above would be
-            var napBtn = Btn(napOpen ? "Close" : "Log a nap", 1, () => { napOpen = !napOpen; DrawEnergy(); });
-            var rateBtn = Btn("Rate now", 1, () => { rateNow = true; ShowFeedback(Now()); });
-            napBtn.Margin = new Thickness(Sp(4, 3), 0, Sp(4, 3), GapY); rateBtn.Margin = new Thickness(Sp(4, 3), 0, Sp(4, 3), GapY);
-            acts.Children.Add(napBtn); acts.Children.Add(rateBtn);
-            sect.Children.Add(acts);
-
             Action<DateTime, DateTime, Action> log = (from, to, bad) =>
             {
                 double mins = (to - from).TotalMinutes;
@@ -676,6 +679,7 @@ namespace Corner
         {
             if (Routines.Data == null) Routines.Load();
             var all = Routines.Data.Routines;
+            ToSection(SecRoutines);
             BeginCard(T.Field);
             var rhead = (Grid)SectionHead("Routines", all.Count.ToString(), routinesOpen, () => { routinesOpen = !routinesOpen; editRoutine = null; DrawEnergy(); });
             var today = SleepLog.Today(Now());
@@ -690,7 +694,7 @@ namespace Corner
             sect.Children.Add(rhead);
             if (!routinesOpen)
             {   // closed, it is one slim line: no taller than the buttons above it
-                ((Border)energyView.Children[energyView.Children.Count - 1]).Padding = new Thickness(PadX, Sp(5, 4), PadX, Sp(5, 4));
+                ((Border)Into.Children[Into.Children.Count - 1]).Padding = new Thickness(PadX, Sp(5, 4), PadX, Sp(5, 4));
                 EndCard(); return;
             }
 

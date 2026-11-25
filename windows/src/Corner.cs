@@ -423,6 +423,7 @@ namespace Corner
             AccentOn = B("#B4C12A", "#EDF3F7FB", "#1B2A3A", "#D9DCDF", "#C6D233", "#A9C6DD"),        // the accent seen on the strong colour: a prompt's caption, a switch's knob
             // the main button ("Done", "Plan my day") and the chosen one of a set of tabs: the accent, except in Glass, where it is bright clear glass
             Main = B("#B4C12A", "#CCFFFFFF", "#E0F4F8FF", "#5F656B", "#BECB2B", "#3E79AF"), OnMain = B("#141A12", "#0F1822", "#0E1A26", "#FFFFFF", "#141A12", "#FFFFFF"),
+            Ink = B("#2A5238", "#EB132A40", "#F4F8FF", "#3C4248", "#46664B", "#2F6596"),              // the line logo in the header
             Knob = B("#FFFFFF", "#F5FFFFFF", "#F0FFFFFF", "#FFFFFF", "#FBFAF6", "#FFFFFF"),          // the knob of a switch that is off
             Sand = B("#CDC6AB", "#59B4C0CC", "#33C9D3DA", "#C8CACD", "#C2C8AD", "#A3BFD6"),       // the hours of expected sleep on the chart
             Danger = B("#A8401F", "#C4260F", "#FF8A75", "#A8321A", "#A8401F", "#B03A1E"), DangerSoft = B("#F4DDD3", "#73F2B5A8", "#4DFF6B55", "#F0D9D2", "#F3DDD2", "#F2DCD4"); // overdue, and nothing else
@@ -508,7 +509,8 @@ namespace Corner
         Grid card; Shade shadow; // the panel, and the soft shadow under it (Shade.cs)
         readonly TranslateTransform cardShift = new TranslateTransform();
         readonly ScaleTransform cardScale = new ScaleTransform(1, 1);
-        TextBlock dayText, subText, inputHint, inputPreview;
+        TextBlock inputHint, inputPreview;
+        Grid headLogo;
         Border inputChip;
         Path ringArc; Border ringDisc;
         TextBox input;
@@ -780,9 +782,13 @@ namespace Corner
             headIcons.Children.Remove(minBtn); minBtn.Visibility = Visibility.Collapsed; minBtn.VerticalAlignment = VerticalAlignment.Center;
             header.Children.Add(minBtn); // the first column, shown in Full Mode
             headText = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-            dayText = new TextBlock { FontSize = Hd(22), FontWeight = FontWeights.SemiBold, Foreground = T.Text };
-            subText = new TextBlock { FontSize = Z(12), Foreground = T.Muted, TextTrimming = TextTrimming.CharacterEllipsis };
-            headText.Children.Add(dayText); headText.Children.Add(subText);
+            // the logo, in both modes: the ball on the hill as two lines, in the skin's own ink (drawn after design\logo-outline-sunburst; sized in Restyle)
+            headLogo = new Grid { Width = 46, Height = 28, HorizontalAlignment = HorizontalAlignment.Left, Background = Brushes.Transparent };
+            var mark = new GeometryGroup { Transform = new MatrixTransform(0.127, 0, 0, 0.127, -4.2, -12.8) };
+            mark.Children.Add(new EllipseGeometry(new Point(155, 168), 42, 42));
+            mark.Children.Add(Geometry.Parse("M41,285 C75,243 110,212 155,212 C240,212 255,298 328,298 C352,298 372,286 388,266"));
+            headLogo.Children.Add(new Path { Data = mark, Stroke = T.Ink, StrokeThickness = 2, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round });
+            headText.Children.Add(headLogo);
             Grid.SetColumn(headText, 1); header.Children.Add(headText);
             // how much of the list is done: a ring on a white disc, drawn at 24 and scaled to fit the disc
             var ring = new Grid { Width = 24, Height = 24, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
@@ -884,12 +890,7 @@ namespace Corner
         {
             var inv = CultureInfo.InvariantCulture;
             int open = data.Tasks.Count(t => !t.Done), done = data.Tasks.Count - open;
-            dayText.Text = DateTime.Now.ToString("dddd", inv);
-            dayText.Visibility = full ? Visibility.Visible : Visibility.Collapsed; // the corner panel keeps only a small date line
-            string count = open > 0 ? open + " open" : data.Tasks.Count > 0 ? "all done" : "";
-            subText.Inlines.Clear();
-            if (full) subText.Inlines.Add(new Run(DateTime.Now.ToString("MMMM d", inv) + (count.Length > 0 ? "  ·  " + count : "")));
-            // (the corner panel shows no date and no count: FocusLayout hides this text there)
+            headLogo.ToolTip = DateTime.Now.ToString("dddd, MMMM d", inv) + (open > 0 ? "  ·  " + open + " open" : "");
 
             DrawFocus(); // the next-task box follows every change (Focus.cs)
             double f = data.Tasks.Count == 0 ? 0 : (double)done / data.Tasks.Count;

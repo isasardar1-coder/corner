@@ -116,14 +116,14 @@ namespace Corner
 
             headerRow.Margin = new Thickness(Side, Sp(16, 11), Side, Sp(12, 9));
             headText.Margin = new Thickness(Slim ? PadX : 0, 0, 8, 0); // in Full Mode the round back button comes first
-            dayText.FontSize = Hd(22); subText.FontSize = Z(Slim ? 13 : 12);
+            headLogo.LayoutTransform = new ScaleTransform(Sp(1, 0.78), Sp(1, 0.78));
             double cell = Sp(34, 26);
             foreach (FrameworkElement c in headIcons.Children) { c.Width = cell; c.Height = cell; c.Margin = new Thickness(Sp(6, 4), 0, 0, 0); }
             minBtn.Width = cell; minBtn.Height = cell; minBtn.Margin = new Thickness(0, 0, 12, 0);
             double rk = Sp(0.75, 0.58); ringBox.LayoutTransform = new ScaleTransform(rk, rk);
 
             inputHint.FontSize = Z(13); input.FontSize = Z(13.5); inputPreview.FontSize = Z(11);
-            addPill.Height = Sp(40, 32); tasksAdd.Margin = FullArranged ? new Thickness(TaskL, GapY, TaskR, 0) : new Thickness(TaskL, 0, TaskR, GapY); // Full Mode: under the list (FullLayout.cs)
+            addPill.Height = Sp(40, 32); tasksAdd.Margin = FullArranged ? new Thickness(0) : new Thickness(TaskL, 0, TaskR, GapY); // Full Mode: under the list (FullLayout.cs)
             addPlus.Margin = new Thickness(PadX - 2, 0, 0, 0); addCol.Width = new GridLength(PadX - 2 + 14 + Sp(9, 7));
             inputChip.Margin = new Thickness(8, 0, Sp(7, 5), 0);
             actionRow.Height = 30;
@@ -143,8 +143,10 @@ namespace Corner
             listCard.CornerRadius = new CornerRadius(Radius); listCard.Margin = new Thickness(TaskL, 0, TaskR, 0);
             listCard.Padding = new Thickness(PadX - RowOver, Sp(8, 6), PadX - RowOver, Sp(8, 6));
             list.Margin = new Thickness(0);
+            if (FullArranged) listCard.Margin = new Thickness(0); // the column brings the sides (FullLayout.cs)
             // whatever scrolls stops Side above the panel's bottom edge, inside its round corners
             tasksScroll.Margin = energyScroll.Margin = settingsScroll.Margin = new Thickness(0, 0, 0, Side);
+            if (FullArranged) { tasksScroll.Margin = new Thickness(0); ArrangeFull(true); }
             ClipList();
             LayoutTop();
         }
@@ -153,7 +155,7 @@ namespace Corner
         void ClipList()
         {
             double w = tasksScroll.ActualWidth, h = tasksScroll.ActualHeight;
-            tasksScroll.Clip = w > 0 && h > 0 ? new RectangleGeometry(new Rect(TaskL, 0, Math.Max(0, w - TaskL - TaskR), h), Radius, Radius) : null;
+            tasksScroll.Clip = w > 0 && h > 0 ? new RectangleGeometry(FullArranged ? new Rect(0, 0, w, h) : new Rect(TaskL, 0, Math.Max(0, w - TaskL - TaskR), h), Radius, Radius) : null;
         }
 
         // ------------------------------------------------------------ controls
@@ -467,6 +469,7 @@ namespace Corner
             SetLine(card, SettingLine("Click sounds", null, Switch(clicks, () => { Settings.Set("Click", clicks ? 0 : 1); DrawSettings(); })));
             SetLine(card, SettingLine("Full Mode sides", Swapped ? "Energy on the left, tasks on the right" : "Tasks on the left, energy on the right",
                 Segmented(new[] { "Tasks left", "Energy left" }, Swapped ? 1 : 0, i => { Settings.Set("SwapSides", i); Swapped = i == 1; Restyle(); DrawSettings(); })));
+            if (full) SetLine(card, SettingLine("Full Mode sections", "Drag one by the dots at its right edge", Btn("Reset", 1, () => { ResetSections(); DrawSettings(); }, 1)));
             SetLine(card, SettingLine("Panel position", "Drag the header to move it", Btn("Reset", 1, () => { ResetPosition(); DrawSettings(); }, 1)));
             DrawUpdates(card); // (Update.cs)
 
