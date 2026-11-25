@@ -12,7 +12,8 @@ import SwiftUI
 
 /// Liquid Glass is light over light things and dark over dark ones. Windows measures the picture it took of the
 /// screen. A Mac app cannot see what is behind its window without the screen-recording permission, which Corner
-/// does not ask for: so the glass is dark when macOS is in Dark Mode and light otherwise. It is settled each time
+/// does not ask for: so the wallpaper is measured where the desktop shows, and a window in the way counts as light
+/// or dark as macOS is set to (Behind.swift); with no wallpaper to go by, all of it does. It is settled each time
 /// a panel, the notice or the welcome window opens, and when Glass is chosen in Settings.
 /// A test render has a drawn wallpaper behind it, and that is measured as on Windows: dark glass below 30%
 /// lightness, back to light above 38%. CORNER_GLASS=dark or light (test renders only) settles it by hand.
@@ -45,7 +46,9 @@ enum GlassLook {
             let l: Double = Backdrop.light(screenRect)
             if l >= 0 { dark = T.dark ? l < 0.38 : l < 0.30 } // (between the two it stays as it was)
         } else {
-            dark = systemDark
+            let sys: Bool = systemDark
+            let l: Double = Behind.light(screenRect, systemDark: sys) // (Behind.swift)
+            if l >= 0 { dark = T.dark ? l < 0.38 : l < 0.30 } else { dark = sys }
         }
         if dark == T.dark { return false }
         T.use(1, darkGlass: dark)

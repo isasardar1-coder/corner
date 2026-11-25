@@ -168,7 +168,7 @@ final class AppModel: ObservableObject {
         scale = max(0.6, min(1.5, (Settings.loadScale() * 20).rounded() / 20))
         fullScale = max(0.7, min(1.6, Settings.get("FullScale", 1)))
         corner = max(0, min(3, Int(Settings.get("Corner", 0))))
-        T.use(Int(Settings.get("Skin", 0)))
+        T.use(Int(Settings.get("Skin", GlassLook.test ? 0 : 1))) // Glass unless another skin was chosen, as on Windows (a test render: Sage)
         allOpen = Settings.get("AllOpen", 0) > 0.5
         EnergyDay.use12 = Settings.get("Clock12", EnergyDay.use12 ? 1 : 0) > 0.5
     }
@@ -548,6 +548,7 @@ final class AppModel: ObservableObject {
 
     func toggleDone(_ t: TaskItem) {
         if t.done {
+            Click.play() // (Sound.swift)
             t.done = false
             t.doneAt = nil
             logUndone(t)
@@ -563,6 +564,7 @@ final class AppModel: ObservableObject {
     /// Marks a task done from its row, the next-task box or a prompt.
     func completeTask(_ t: TaskItem) {
         let wasNext = isFocus(t)
+        Click.play() // (Sound.swift)
         t.done = true
         t.doneAt = AppModel.iso(Date())
         logDone(t)

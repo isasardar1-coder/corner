@@ -268,7 +268,7 @@ struct Toggle2: View {
         }
         .frame(width: 36, height: 20)
         .contentShape(Capsule())
-        .onTapGesture { action() }
+        .onTapGesture { Click.play(); action() } // (Sound.swift)
     }
 }
 

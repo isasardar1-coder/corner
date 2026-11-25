@@ -160,6 +160,7 @@ struct PanelSettings: View {
         let corners = ["Top right", "Top left", "Bottom right", "Bottom left"]
         let auto = Autostart.enabled
         let swapped: Bool = model.swapped
+        let clicks: Bool = Click.on
         return Group {
             SetCaps(text: "Panel")
             SetCard(lines: [
@@ -174,6 +175,9 @@ struct PanelSettings: View {
                 SettingLine(title: "Hot corner", sub: corners[model.corner] + " opens the list") { CornerPicker() }.any(),
                 SettingLine(title: "Open at login", sub: Autostart.inApp ? nil : "Move Corner.app to Applications first") {
                     Toggle2(on: auto) { Autostart.set(!auto); model.changed() }
+                }.any(),
+                SettingLine(title: "Click sounds") {
+                    Toggle2(on: clicks) { Settings.set("Click", clicks ? 0 : 1); model.changed() }
                 }.any(),
                 SettingLine(title: "Full Mode sides", sub: swapped ? "Energy on the left, tasks on the right" : "Tasks on the left, energy on the right") {
                     Segmented(names: ["Tasks left", "Energy left"], chosen: swapped ? 1 : 0) { i in
@@ -228,7 +232,7 @@ struct SkinPicker: View {
 
     func pills() -> [AnyView] {
         var list: [AnyView] = []
-        for i in 0..<T.names.count {
+        for i in [1, 2, 3, 4, 0] { // Glass first (the default), as on Windows; the numbers stay as saved
             let on: Bool = i == T.skin
             let pill = Text(T.names[i]).font(m.font(11)).foregroundColor(on ? T.onMain : T.text)
                 .lineLimit(1).fixedSize()

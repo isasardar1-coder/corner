@@ -51,7 +51,7 @@ final class SkinWatch: ObservableObject {
 ///   Metal, Ceramic, Paper: the made skins, whose depth is drawn in Material.swift.
 enum T {
     static let names = ["Sage", "Glass", "Metal", "Ceramic", "Paper"]
-    static let says = ["Sage, forest and lime", "Clear glass over what is behind", "Brushed silver, white enamel and steel",
+    static let says = ["Sage, forest and lime", "Clear glass; dark over dark things", "Brushed silver, white enamel and steel",
                        "Sage stoneware and glazed porcelain", "Blue card and white paper"]
     static var skin = 0
     static var glass: Bool { return skin == 1 }

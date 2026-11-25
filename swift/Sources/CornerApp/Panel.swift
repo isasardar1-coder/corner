@@ -683,6 +683,7 @@ final class PanelController: NSObject, NSMenuDelegate {
             guard let s = self else { exit(1) }
             s.place(animated: false)
             s.hosting.layoutSubtreeIfNeeded()
+            if modeIn == "settings" { Store.log(Behind.report() + ", click " + String(Click.wav().count) + " bytes, sound " + String(NSSound(data: Click.wav()) != nil)) }
             let scr = s.window.screen ?? NSScreen.main
             Store.log("demo " + modeIn + ": screen " + NSStringFromRect(scr?.frame ?? .zero) + " visible " + NSStringFromRect(scr?.visibleFrame ?? .zero)
                       + " window " + NSStringFromRect(s.window.frame) + " target " + NSStringFromRect(s.targetFrame())
