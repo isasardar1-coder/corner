@@ -20,8 +20,10 @@ What changed in each version is on the [Releases](../../releases) page and in [R
   every 6 hours, and swaps itself once you are not using it. Settings > Updates turns this off.
 - **Windows, version 1.0.0:** download `Corner-Windows.zip` once more and put the new `Corner.exe` in place of the old
   one (keep your other files). From then on it updates itself.
-- **Mac:** download `Corner-Mac-Swift.zip` again and replace Corner.app in Applications. Your tasks are kept; they
-  live in `~/Library/Application Support/Corner`.
+- **Mac, version 1.1.3 or newer:** Corner updates itself in the same way, as long as Corner.app is in Applications. If
+  macOS does not let it, Settings > Panel offers the download.
+- **Mac, before 1.1.3:** download `Corner-Mac-Swift.zip` once more and replace Corner.app in Applications. Your tasks
+  are kept; they live in `~/Library/Application Support/Corner`.
 
 ### Windows
 
@@ -51,7 +53,7 @@ copy them between a PC and a Mac.
 
 The Mac app follows the Windows app. It has the same tasks, energy curve, planning (by schedule or by priority),
 stopwatch, work log and habits, the same five skins (Sage, Glass, Metal, Ceramic, Paper) and the same opening
-animations, the same corner panel and Full Mode layouts, and reads the same data files. It does not update itself.
+animations, the same corner panel and Full Mode layouts, and reads the same data files.
 Its Glass skin uses the Mac's own blur behind the panel and is dark when macOS is in Dark Mode (on Windows it is dark
 over a dark part of the screen).
 

@@ -227,4 +227,11 @@
   PASS  still waking up (07:20, groggy until 08:05): the low-effort task first, the high-effort one last, even with a high counter   [Tidy desk > Review > Plain > Write concept]
   PASS  once the groggy stretch is over: the high-effort task first again   [Write concept > Review > Plain > Tidy desk]
   PASS  a 90-minute high task 5 minutes before the peak ends: still first, and the reason says when the peak ends   [your peak lasts until 11:25]
+  PASS  update: v9.0.0 is newer than 1.1.2
+  PASS  update: a build's own tag is not newer
+  PASS  update: v1.0.0 is not newer; 1.1.10 is newer than 1.1.9
+  PASS  update: a tag that is not a version is ignored
+  PASS  update: version as a number
+  PASS  update: reads the tag and the Mac zip from a release
+  PASS  update: a release without the Mac zip is skipped
 ALL PASS

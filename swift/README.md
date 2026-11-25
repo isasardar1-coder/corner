@@ -6,7 +6,7 @@ It uses Foundation only. The data files are the same as on Windows (`tasks.json`
 `routines.json`, `done.csv`, `days.csv`, `checkins.csv`, `profile.txt`), so they can be copied between a PC and a Mac.
 They live in `~/Library/Application Support/Corner`, or in the folder named by the `CORNER_DATA` environment variable.
 
-`CornerChecks` is the port of the Windows checks (131 of them, same names and order; the Windows checks of its self-update have no counterpart here).
+`CornerChecks` is the port of the Windows checks (138 of them: 131 with the same names and order, then 7 for the Mac's self-update). `update-test.sh` tries that update for real, on a Mac.
 
 ## Running the checks
 
