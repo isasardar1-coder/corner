@@ -185,8 +185,28 @@ struct PanelSettings: View {
                 SettingLine(title: "Panel position", sub: "Drag the header to move it") {
                     Btn(text: "Reset", kind: 1, on: 1) { model.shell?.resetPosition(); model.changed() }
                 }.any(),
+                updates(),
+                version(),
             ])
         }
+    }
+
+    func updates() -> AnyView {
+        let on: Bool = UpdateWatch.on
+        return SettingLine(title: "Updates", sub: on ? "Automatic: Corner updates itself" : "Off: Corner doesn't look for updates") {
+            Toggle2(on: on) { Settings.set("AutoUpdate", on ? 0 : 1); model.changed() }
+        }.any()
+    }
+
+    /// The version, what the last check said, and "Check now" ("Download" when Corner could not replace itself).
+    func version() -> AnyView {
+        let w: UpdateWatch? = model.shell?.updates
+        let every: String = "Checks every " + String(Updater.everyHours) + " hours"
+        let stuck: Bool = w?.waiting != nil
+        let label: String = w?.busy == true ? "Checking…" : (stuck ? "Download" : "Check now")
+        return SettingLine(title: "Version " + Updater.version, sub: w?.note ?? every) {
+            Btn(text: label, kind: 1, on: 1) { if stuck { w?.openPage() } else { w?.check(manual: true) } }
+        }.any()
     }
 }
 

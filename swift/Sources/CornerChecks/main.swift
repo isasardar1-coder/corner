@@ -1033,6 +1033,17 @@ enum Program {
         check("a 90-minute high task 5 minutes before the peak ends: still first, and the reason says when the peak ends",
               hcEnd[0].task.title == "Long write" && hcEnd[0].why == "your peak lasts until " + EnergyDay.clock(hcPeakEnd), hcEnd[0].why ?? "")
 
+        // updates (the checks of Update.cs, for the Mac zip)
+        check("update: v9.0.0 is newer than 1.1.2", UpdateInfo.isNewer("v9.0.0", than: "1.1.2"))
+        check("update: a build's own tag is not newer", !UpdateInfo.isNewer("v1.1.2", than: "1.1.2"))
+        check("update: v1.0.0 is not newer; 1.1.10 is newer than 1.1.9", !UpdateInfo.isNewer("v1.0.0", than: "1.1.2") && UpdateInfo.isNewer("v1.1.10", than: "1.1.9"))
+        check("update: a tag that is not a version is ignored", !UpdateInfo.isNewer("nightly", than: "1.1.2") && !UpdateInfo.isNewer(nil, than: "1.1.2") && !UpdateInfo.isNewer("v9.x.0", than: "1.1.2"))
+        check("update: version as a number", UpdateInfo.number("1.2.3") == 10203 && UpdateInfo.number("v1.1") == 10100)
+        let upJson: String = "{\"tag_name\": \"v1.2.0\", \"assets\": [{\"browser_download_url\": \"https://x/v1.2.0/Corner-Windows.zip\"}, {\"browser_download_url\": \"https://x/v1.2.0/Corner-Mac-Swift.zip\"}]}"
+        let up = UpdateInfo.parseRelease(upJson)
+        check("update: reads the tag and the Mac zip from a release", up?.tag == "v1.2.0" && up?.zip == "https://x/v1.2.0/Corner-Mac-Swift.zip")
+        check("update: a release without the Mac zip is skipped", UpdateInfo.parseRelease("{\"tag_name\": \"v2.0.0\", \"assets\": []}") == nil)
+
         print(fails == 0 ? "ALL PASS" : String(fails) + " FAILED")
     }
 }

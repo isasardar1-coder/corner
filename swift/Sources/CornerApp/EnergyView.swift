@@ -34,10 +34,7 @@ struct EnergyView: View {
                         .padding(.bottom, 10)
                     HStack { Btn(text: "Enter sleep", kind: 0) { model.openCheckIn(edit: false) }; Spacer() }
                 }
-                if model.full {
-                    RoutinesCard()
-                    DoneCard()
-                }
+                if model.full { RoutinesCard() } // (the done tasks come with the chart, as on Windows)
             }
         }
     }

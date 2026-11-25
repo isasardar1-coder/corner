@@ -74,12 +74,14 @@ final class PanelController: NSObject, NSMenuDelegate {
     var timers: [Timer] = []
     var awayTokens: [NSObjectProtocol] = []
     let fx = GenieStage() // the animations under way (Genie.swift)
+    let updates = UpdateWatch() // (Updater.swift)
 
     init(model: AppModel) {
         self.model = model
         super.init()
         model.shell = self
         fx.shell = self
+        updates.shell = self
     }
 
     static func ms() -> Double { return ProcessInfo.processInfo.systemUptime * 1000 }
@@ -133,6 +135,7 @@ final class PanelController: NSObject, NSMenuDelegate {
             showPanel(peekMs: peek ? 6000 : 4500)
         }
         model.checkReminders()
+        updates.start(test: test)
     }
 
     /// The Mac going to sleep, its screen going dark or locking, or another user taking the screen: the task being
@@ -696,6 +699,13 @@ final class PanelController: NSObject, NSMenuDelegate {
         let byPriority = mode == "priority" || mode == "paused" || mode == "order" || mode == "planning"
         if byPriority { Settings.set("PlanBy", 1) }
         if mode == "habits" { demoHabits() }
+        if mode == "long" { // Full Mode with more tasks than fit: the card itself scrolls
+            for i in 1...24 {
+                model.input = "Task number " + String(i)
+                model.addTask()
+            }
+            model.input = ""
+        }
         if mode == "plan" || mode == "applied" || mode == "priority" || mode == "paused" || mode == "order" || mode == "swap" {
             for s in ["Tidy desk", "Anki insertion !low 20m", "Review animation !med", "Emails !low", "Write concept 14 !high 45m"] {
                 model.input = s

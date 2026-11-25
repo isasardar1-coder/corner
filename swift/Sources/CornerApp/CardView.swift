@@ -250,7 +250,7 @@ struct UsedHeightKey: PreferenceKey {
 }
 
 /// The tasks column: the prompts, the open tasks, the add box, then the plan. The list takes the room the others
-/// leave and scrolls inside its card when it needs more; the plan may take up to half (FitStack in FullLayout.cs).
+/// leave and its card scrolls when it needs more; the plan may take up to half (FitStack in FullLayout.cs).
 struct FullTasks: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.m) var m
@@ -262,8 +262,9 @@ struct FullTasks: View {
         let gap: CGFloat = m.gapY
         let avail: CGFloat = maxHeight - m.side
         let planMax: CGFloat = max(120, avail * 0.5)
-        let cardPad: CGFloat = 2 * m.sp(8, 6)
-        let listMax: CGFloat = max(60, avail - used - cardPad)
+        let listMax: CGFloat = max(60, avail - used)
+        let made: Bool = T.skin >= 2
+        let side: CGFloat = made ? 8 : 0 // the list's card: room for its shadow (a made skin); in the others it is cut off round, as the card is
         let over: CGFloat = 8 // room inside the plan's scrolling part for its card's shadow (a made skin)
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
@@ -272,7 +273,9 @@ struct FullTasks: View {
                 if model.alertTask != nil { AlertView().padding(.bottom, gap) }
             }
             .background(GeometryReader { g in Color.clear.preference(key: UsedHeightKey.self, value: g.size.height) })
-            TaskListCard(scrollMax: listMax)
+            FitScroll(maxHeight: listMax) { TaskListCard().padding(.horizontal, side) }
+                .clipShape(RoundedRectangle(cornerRadius: made ? 0 : m.radius, style: .continuous))
+                .padding(.horizontal, -side)
             VStack(alignment: .leading, spacing: 0) {
                 AddBox().padding(.top, gap)
                 FitScroll(maxHeight: planMax) {
