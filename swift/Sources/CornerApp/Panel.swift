@@ -254,7 +254,6 @@ final class PanelController: NSObject, NSMenuDelegate {
     var screen: NSScreen? { return NSScreen.screens.first }
 
     func cardSizeChanged(_ s: CGSize) {
-        Store.log("CARD " + NSStringFromSize(s) + " bare " + String(model.bare))
         cardSize = s
         if window.isVisible { place(animated: false) }
     }
@@ -629,7 +628,7 @@ final class PanelController: NSObject, NSMenuDelegate {
     func demo(_ path: String, _ modeIn: String) {
         var mode = modeIn
         model.demoRun = true
-        FitScrollFlag.plain = ProcessInfo.processInfo.environment["PROBE_REAL"] != "1"
+        FitScrollFlag.plain = true
         if let v = ProcessInfo.processInfo.environment["CORNER_SKIN"], let i = Int(v) { T.use(i) } // any mode in a skin (0 to 4)
         if let v = ProcessInfo.processInfo.environment["CORNER_SKIN_TO"], let i = Int(v) { // and then, on screen, the change to another
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in self?.model.setSkin(i) }

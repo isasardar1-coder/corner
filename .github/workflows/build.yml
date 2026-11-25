@@ -22,8 +22,7 @@ jobs:
         working-directory: swift
         run: |
           case "$GITHUB_REF_NAME" in v[0-9]*) export CORNER_VERSION="${GITHUB_REF_NAME#v}";; esac
-          DEMOS=0 bash package.sh
-          for r in 0 1; do for m in rest resttimeup tasks; do d=$(mktemp -d); echo "== real=$r $m"; CORNER_DATA=$d PROBE_REAL=$r out/Corner.app/Contents/MacOS/Corner --demo $PWD/out/demo-$m-r$r.png $m & p=$!; for i in $(seq 30); do kill -0 $p 2>/dev/null || break; sleep 1; done; kill $p 2>/dev/null || true; wait $p || true; cat $d/error.log || true; done; done
+          bash package.sh
       - uses: actions/upload-artifact@v4
         with:
           name: Corner-Mac-Swift

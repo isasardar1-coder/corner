@@ -627,7 +627,6 @@ struct FitHeightKey: PreferenceKey {
 
 /// Test renders draw a plain clipped box instead of a scroll view: a bitmap of the window (cacheDisplay) does not
 /// clip a scroll view's content the way the screen does.
-enum FitProbe { static func say(_ v: CGFloat) { Store.log("FIT geo " + String(Double(v))) } }
 enum FitScrollFlag { static var plain = false }
 
 /// A vertical scroll view as tall as its content, up to maxHeight.
@@ -652,7 +651,7 @@ struct FitScroll<Content: View>: View {
                     content()
                         .id(look)
                         .fixedSize(horizontal: false, vertical: true)
-                        .background(GeometryReader { g in FitProbe.say(g.size.height); return Color.clear.preference(key: FitHeightKey.self, value: g.size.height) })
+                        .background(GeometryReader { g in Color.clear.preference(key: FitHeightKey.self, value: g.size.height) })
                     Spacer(minLength: 0)
                 }
                 .frame(height: max(1, min(h, maxHeight)), alignment: .top)
@@ -663,7 +662,7 @@ struct FitScroll<Content: View>: View {
                 ScrollView(.vertical, showsIndicators: false) {
                     content()
                         .id(look)
-                        .background(GeometryReader { g in FitProbe.say(g.size.height); return Color.clear.preference(key: FitHeightKey.self, value: g.size.height) })
+                        .background(GeometryReader { g in Color.clear.preference(key: FitHeightKey.self, value: g.size.height) })
                         .padding(.bottom, room)
                 }
                 .frame(height: max(1, min(h, maxHeight)) + over)
@@ -671,10 +670,7 @@ struct FitScroll<Content: View>: View {
                 .padding(.bottom, -over)
             }
         }
-        .onPreferenceChange(FitHeightKey.self) { v in
-            Store.log("FIT pref " + String(Double(v)) + " had " + String(Double(h)))
-            if abs(v - h) > 0.5 { h = v }
-        }
+        .onPreferenceChange(FitHeightKey.self) { v in if abs(v - h) > 0.5 { h = v } }
         .transformPreference(FitHeightKey.self) { $0 = 0 }
     }
 }
