@@ -667,6 +667,8 @@ final class PanelController: NSObject, NSMenuDelegate {
         let full = fullOnly || mode.hasPrefix("full") || ProcessInfo.processInfo.environment["CORNER_FULL"] == "1"
         if mode.hasPrefix("full") { mode = String(mode.dropFirst(4)); if mode.isEmpty { mode = "tasks" } }
         let rest = mode.hasPrefix("rest")
+        // at rest nothing scrolls, and the plain box would keep the height it had with the row of chips: the real one
+        if rest { FitScrollFlag.plain = false }
         if rest && mode.count > 4 { mode = String(mode.dropFirst(4)) }
         if let i = ["glass": 1, "metal": 2, "ceramic": 3, "paper": 4][mode] { T.use(i); mode = "tasks" }
         demoSeed(mode)
