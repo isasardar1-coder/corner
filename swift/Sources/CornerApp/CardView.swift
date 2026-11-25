@@ -263,8 +263,7 @@ struct FullTasks: View {
         let avail: CGFloat = maxHeight - m.side
         let planMax: CGFloat = max(120, avail * 0.5)
         let listMax: CGFloat = max(60, avail - used)
-        let made: Bool = T.skin >= 2
-        let side: CGFloat = made ? 8 : 0 // the list's card: room for its shadow (a made skin); in the others it is cut off round, as the card is
+        let side: CGFloat = T.skin >= 2 ? 8 : 0 // the list's card: room beside it for its shadow (a made skin)
         let over: CGFloat = 8 // room inside the plan's scrolling part for its card's shadow (a made skin)
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
@@ -273,8 +272,7 @@ struct FullTasks: View {
                 if model.alertTask != nil { AlertView().padding(.bottom, gap) }
             }
             .background(GeometryReader { g in Color.clear.preference(key: UsedHeightKey.self, value: g.size.height) })
-            FitScroll(maxHeight: listMax) { TaskListCard().padding(.horizontal, side) }
-                .clipShape(RoundedRectangle(cornerRadius: made ? 0 : m.radius, style: .continuous))
+            FitScroll(maxHeight: listMax, round: m.radius, inset: side) { TaskListCard().padding(.horizontal, side) }
                 .padding(.horizontal, -side)
             VStack(alignment: .leading, spacing: 0) {
                 AddBox().padding(.top, gap)

@@ -629,11 +629,24 @@ struct FitHeightKey: PreferenceKey {
 /// clip a scroll view's content the way the screen does.
 enum FitScrollFlag { static var plain = false }
 
+/// What a FitScroll is cut off with: its box, or one with round corners a little in from the sides.
+struct FitClip: Shape {
+    let radius: CGFloat
+    let inset: CGFloat
+    let style: RoundedCornerStyle
+    func path(in r: CGRect) -> Path {
+        if radius <= 0 { return Path(r) }
+        return Path(roundedRect: r.insetBy(dx: inset, dy: 0), cornerRadius: radius, style: style)
+    }
+}
+
 /// A vertical scroll view as tall as its content, up to maxHeight.
 /// What is inside is made again when the skin changes (its id is the skin's look), so that every part of it is drawn in
 /// the new colours; the scroll view itself stays, and with it how far it is scrolled.
 struct FitScroll<Content: View>: View {
     let maxHeight: CGFloat
+    var round: CGFloat = 0 // when it scrolls, what is seen of it is cut off with round corners of this size (a card that scrolls)
+    var inset: CGFloat = 0 // and this far in from the sides
     var skin: Int = T.skin // (kept: a FitScroll that is otherwise the same as before is not looked at again)
     var look: Int = T.look // (the same number, but another when Glass goes from light to dark)
     @ViewBuilder let content: () -> Content
@@ -645,6 +658,8 @@ struct FitScroll<Content: View>: View {
         // it scrolls, the room is at the end of what scrolls.
         let room: CGFloat = skin >= 2 ? 8 : 0
         let over: CGFloat = h <= maxHeight ? room : 0
+        let cut: CGFloat = h > maxHeight ? round : 0
+        let clip = FitClip(radius: cut, inset: cut > 0 ? inset : 0, style: skin >= 2 ? .circular : .continuous)
         Group {
             if FitScrollFlag.plain {
                 VStack(spacing: 0) {
@@ -656,7 +671,7 @@ struct FitScroll<Content: View>: View {
                 }
                 .frame(height: max(1, min(h, maxHeight)), alignment: .top)
                 .padding(.bottom, over)
-                .clipped()
+                .clipShape(clip)
                 .padding(.bottom, -over)
             } else {
                 ScrollView(.vertical, showsIndicators: false) {
@@ -666,7 +681,7 @@ struct FitScroll<Content: View>: View {
                         .padding(.bottom, room)
                 }
                 .frame(height: max(1, min(h, maxHeight)) + over)
-                .clipped()
+                .clipShape(clip)
                 .padding(.bottom, -over)
             }
         }
