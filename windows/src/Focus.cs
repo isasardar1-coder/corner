@@ -55,16 +55,14 @@ namespace Corner
             minBtn.Visibility = full ? Visibility.Visible : Visibility.Collapsed;
             if (fullBox != null) fullBox.Visibility = full ? Visibility.Collapsed : Visibility.Visible;
             if (gearBox != null) gearBox.Visibility = full ? Visibility.Visible : Visibility.Collapsed; // settings are opened from Full Mode
-            headText.Visibility = full ? Visibility.Visible : Visibility.Collapsed; // the corner panel's header is the ring and two buttons
 
             var on = Visibility.Visible; var off = Visibility.Collapsed;
             ArrangeFull(full); // Full Mode: plan and next task under the list, done tasks in the other column (FullLayout.cs)
             if (promptOnly) { focusBox.Visibility = off; actionRow.Visibility = off; tasksAdd.Visibility = off; LayoutTop(); return; }
             if (full)
-            {   // Full Mode: next task on top, then the add box and the whole list; energy is the other column
-                focusBox.Visibility = on; actionRow.Visibility = off; tasksAdd.Visibility = on; tasksScroll.Visibility = on;
+            {   // Full Mode: no next-task box (the row being timed says it); the sections stand in two columns (FullLayout.cs)
+                focusBox.Visibility = off; actionRow.Visibility = off; tasksAdd.Visibility = on; tasksScroll.Visibility = on;
                 LayoutTop();
-                ArrangeFull(true); // (sets the next task's margins, which LayoutTop leaves alone)
                 return;
             }
             // the corner panel. At rest it is the next task alone: no header, no chips, no list (Reveal brings them in)
@@ -372,12 +370,17 @@ namespace Corner
                 icon.Stroke = ink; icon.Fill = big && !running ? ink : Brushes.Transparent; // the next task's play triangle is solid
                 b.Opacity = big && hot ? 0.9 : 1;
                 b.ToolTip = prio ? (running ? "Pause" : begun ? "Carry on with this" : "Start working on this")
-                    : running ? "Pause the timer" : mine ? "Carry on" : "Start a " + DurationMin(t) + "-minute timer";
+                    : running ? "Pause the timer" + (big ? "" : " (right-click: reset)") : mine ? "Carry on" + (big ? "" : " (right-click: reset)") : "Start a " + DurationMin(t) + "-minute timer";
             };
             paint(); repaint.Add(paint);
             b.MouseEnter += (s, e) => { hot = true; paint(); };
             b.MouseLeave += (s, e) => { hot = false; paint(); };
             b.MouseLeftButtonDown += (s, e) => { e.Handled = true; TimerClick(t); };
+            if (!big) b.MouseRightButtonDown += (s, e) =>
+            {   // Full Mode has no next-task box, and so no "Reset" of its own: a right-click on the row's timer does it
+                if (t.Id != timerId || PriorityMode) return;
+                e.Handled = true; StopTimer(); RepaintTimers(); DrawFocus();
+            };
             return b;
         }
 
