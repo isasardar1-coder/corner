@@ -235,7 +235,6 @@ struct TaskRow: View {
         let rowH = m.sp(34, 26)
         let ck = m.sp(18, 15)
         let timed = model.timerId == t.id && !t.done
-        let worked = model.workedOn(t)
         let showHover = (hot && !dragging) || (dragging && model.dragging && hot)
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 0) {
@@ -246,9 +245,9 @@ struct TaskRow: View {
                     if t.done {
                         Circle().fill(T.ctl)
                         Glyph(d: "M5,9.4 L7.9,12.2 L13.2,6.2", color: T.text, th: 1.8, w: 18, h: 18)
-                    } else if worked {
-                        // being worked on: the circle carries a tick, so the one control says "completed"
-                        Glyph(d: "M5,9.4 L7.9,12.2 L13.2,6.2", color: T.text, th: 1.8, w: 18, h: 18)
+                    } else if boxHot {
+                        // under the mouse, a faint tick: the circle ticks it off (the timed task's circle is empty like the rest)
+                        Glyph(d: "M5,9.4 L7.9,12.2 L13.2,6.2", color: T.text, th: 1.8, w: 18, h: 18).opacity(0.5)
                     }
                 }
                 .frame(width: 18, height: 18)
@@ -259,7 +258,6 @@ struct TaskRow: View {
                 .contentShape(Rectangle())
                 .onHover { boxHot = $0 }
                 .onTapGesture { model.toggleDone(t) }
-                .help(worked ? "Completed" : "")
 
                 // the title, or the box it is edited in
                 Group {

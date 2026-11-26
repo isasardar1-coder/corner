@@ -247,7 +247,6 @@ enum Resources {
 
 let cardW: CGFloat = 312      // the corner panel
 let fullW: CGFloat = 800      // Full Mode: two equal columns of fullW / 2
-let fullMinH: CGFloat = 540
 let rowOver: CGFloat = 6      // how far a task row's hover highlight reaches past its content
 let shadowM: CGFloat = 30     // room round the card for its shadow, inside the window
 
