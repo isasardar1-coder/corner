@@ -45,7 +45,7 @@ enum Sec {
     static func shown(_ k: Int, _ model: AppModel) -> Bool {
         switch k {
         case plan, stats: return model.energy != nil
-        case done: return model.energy != nil && model.data.tasks.contains { $0.done }
+        case done: return model.energy != nil && (!model.doneToday().isEmpty || !model.pastDays().isEmpty)
         default: return true
         }
     }

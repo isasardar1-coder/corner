@@ -561,6 +561,30 @@ namespace CornerTests
             Check("work.csv: a heading, then one row per stretch", pwLines.Length == 2 && pwLines[0].EndsWith(WorkLog.Head) && WorkLog.Rows.Count == 1 && WorkLog.Rows[0].Id == "a1");
             Check("a stretch across midnight ends the next day", WorkLog.Parse("2026-11-20,23:50:00,00:10:00,20,x,Late,low,mental,no,30,40,35,,paused,evening", out pwBack) && pwBack.End == new DateTime(2026, 11, 21, 0, 10, 0));
 
+            // Done shows how long and from when to when (WorkLog.SpanOf, Dur)
+            Func<string, double, double, WorkRow> dnW = (id, hour, mins) => new WorkRow { Start = day.AddHours(hour), End = day.AddHours(hour).AddMinutes(mins), Minutes = mins, Id = id, Title = id };
+            var dnRows = new List<WorkRow> { dnW("a", 9, 20), dnW("b", 9.5, 30), dnW("a", 11, 25), dnW("a", 11.5, 0), dnW("a", -30, 40), dnW("a", 26, 10) };
+            var dnSpan = WorkLog.SpanOf(dnRows, "a", day);
+            Check("a done task's work today: 20 + 25 + 10 min, 09:00 to 02:10 (the small hours count; an earlier day and an empty row do not)",
+                dnSpan != null && Math.Abs(dnSpan.Minutes - 55) < 0.01 && dnSpan.From == day.AddHours(9) && dnSpan.To == day.AddHours(26).AddMinutes(10));
+            Check("a task never timed today has no span", WorkLog.SpanOf(dnRows, "c", day) == null && WorkLog.SpanOf(dnRows, "b", day.AddDays(1)) == null);
+            Check("lengths in words: under 1m, 45m, 1h, 1h 05m", WorkLog.Dur(0.3) == "under 1m" && WorkLog.Dur(44.6) == "45m" && WorkLog.Dur(60) == "1h" && WorkLog.Dur(65) == "1h 05m", WorkLog.Dur(65));
+
+            // the days before today (History)
+            Func<string, int, double, double, TaskLog.Row> hyD = (id, daysAgo, hour, timer) => new TaskLog.Row { Day = day.AddDays(-daysAgo), At = day.AddDays(-daysAgo).AddHours(hour), Id = id, Title = id, TimerMinutes = timer };
+            var hyDone = new List<TaskLog.Row> { hyD("a", 0, 11.5, 45), hyD("b", 0, 10, 0), hyD("late", 0, 1.5, 0), hyD("old", 3, 10, 18) };
+            var hyDays = History.Days(dnRows, hyDone);
+            Check("history: the days with a tick or timed work, oldest first (3 days ago, work 2 days ago, today)",
+                hyDays.Count == 3 && hyDays[0] == day.AddDays(-3) && hyDays[1] == day.AddDays(-2) && hyDays[2] == day, string.Join(" ", hyDays.Select(d => d.ToString("MM-dd"))));
+            var hyOf = History.Of(dnRows, hyDone, day);
+            Check("history: a day's finished tasks, latest first, a tick at 01:30 that night before the rest; each with its work that day",
+                hyOf.Count == 3 && hyOf[0].Id == "late" && hyOf[1].Id == "a" && hyOf[2].Id == "b" && hyOf[1].Span != null && Math.Abs(hyOf[1].Span.Minutes - 55) < 0.01 && hyOf[2].Span != null && hyOf[0].Span == null, string.Join(" ", hyOf.Select(i => i.Id)));
+            Check("history: the day's time worked is every timed stretch, finished or not (55 + 30), and 40 two days ago",
+                Math.Abs(History.Worked(dnRows, day) - 85) < 0.01 && Math.Abs(History.Worked(dnRows, day.AddDays(-2)) - 40) < 0.01 && History.Worked(dnRows, day.AddDays(-3)) == 0);
+            var hyOld = History.Of(dnRows, hyDone, day.AddDays(-3));
+            Check("history: a tick from before work.csv keeps its timer minutes and says when it was ticked",
+                hyOld.Count == 1 && WorkLog.Note(hyOld[0].Span, hyOld[0].At, hyOld[0].TimerMinutes) == "18m · " + EnergyDay.Clock(hyOld[0].At) && WorkLog.Note(null, hyOld[0].At) == EnergyDay.Clock(hyOld[0].At), WorkLog.Note(hyOld[0].Span, hyOld[0].At, hyOld[0].TimerMinutes));
+
             Func<string, int, double, double, string, WorkRow> pwW = (title, daysAgo, hour, mins, effort) =>
                 new WorkRow { Start = day.AddDays(-daysAgo).AddHours(hour), End = day.AddDays(-daysAgo).AddHours(hour).AddMinutes(mins), Minutes = mins, Id = title + daysAgo, Title = title, Effort = effort, Kind = "mental", Ended = "completed" };
             var pwLog = new List<WorkRow>

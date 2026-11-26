@@ -206,6 +206,13 @@
   PASS  a row of work.csv reads back as written (title with a comma and quotes, energy 48 -> 61, no typed %)   [2026-11-21,09:00:05,09:45:00,44.9,a1,"Write, ""concept"" 14",high,mental,no,45,48,61,,paused,morning]
   PASS  work.csv: a heading, then one row per stretch
   PASS  a stretch across midnight ends the next day
+  PASS  a done task's work today: 20 + 25 + 10 min, 09:00 to 02:10 (the small hours count; an earlier day and an empty row do not)
+  PASS  a task never timed today has no span
+  PASS  lengths in words: under 1m, 45m, 1h, 1h 05m   [1h 05m]
+  PASS  history: the days with a tick or timed work, oldest first (3 days ago, work 2 days ago, today)   [11-18 11-19 11-21]
+  PASS  history: a day's finished tasks, latest first, a tick at 01:30 that night before the rest; each with its work that day   [late a b]
+  PASS  history: the day's time worked is every timed stretch, finished or not (55 + 30), and 40 two days ago
+  PASS  history: a tick from before work.csv keeps its timer minutes and says when it was ticked   [18m · 10:00]
   PASS  usual in the morning: only what was done on 3 of the last 28 days (not twice, not a month ago, not in the evening)   [Emails x3]
   PASS  its length is the middle of the real minutes, to the nearest five; today is not counted   [20 min]
   PASS  usual in the evening: Reading

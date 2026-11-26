@@ -448,3 +448,81 @@ extension AppModel {
         changed()
     }
 }
+
+// ---------------------------------------------------------------- Done: today's, and the days before
+// (Work.cs: DoneToday, DoneNote, PastDays, DoneStep)
+
+enum DoneHistory {
+    static var rows: [TaskLog.Row] = []
+    static var seen = -1
+
+    /// done.csv, read again only when it has been written.
+    static func doneRows() -> [TaskLog.Row] {
+        if seen != TaskLog.changes {
+            seen = TaskLog.changes
+            rows = TaskLog.readDone()
+        }
+        return rows
+    }
+
+    static let withFraction: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    static let plain: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+}
+
+extension AppModel {
+    /// When a task was ticked off; nil when that cannot be read.
+    static func doneTime(_ t: TaskItem) -> Date? {
+        guard let s = t.doneAt else { return nil }
+        if let d = DoneHistory.withFraction.date(from: s) { return d }
+        return DoneHistory.plain.date(from: s)
+    }
+
+    /// The tasks completed today, latest first. Earlier days' are not shown: done.csv and work.csv keep them.
+    /// (A task whose time of completion cannot be read is shown, so nothing done is lost from view by a bad date.)
+    func doneToday() -> [TaskItem] {
+        let today: Date = SleepLog.today(Date())
+        let list: [TaskItem] = data.tasks.filter { t in
+            if !t.done { return false }
+            guard let at = AppModel.doneTime(t) else { return true }
+            return SleepLog.today(at) == today
+        }
+        return list.sorted { ($0.doneAt ?? "") > ($1.doneAt ?? "") }
+    }
+
+    /// Beside a done task: how long it was worked on and from when to when, or the time it was ticked off.
+    func doneNote(_ t: TaskItem) -> String? {
+        guard let at = AppModel.doneTime(t) else { return nil }
+        return WorkLog.note(WorkLog.spanOf(WorkLog.rows, t.id, SleepLog.today(at)), at)
+    }
+
+    /// The days before today with something to show, oldest first.
+    func pastDays() -> [Date] {
+        let today: Date = SleepLog.today(Date())
+        return History.days(WorkLog.rows, DoneHistory.doneRows()).filter { $0 < today }
+    }
+
+    /// One day back (-1) or forward (+1), skipping days with nothing to show. Forward from the last one is today.
+    func doneStep(_ by: Int) {
+        let days: [Date] = pastDays()
+        var cur: Date? = doneDay
+        if let c = cur, !days.contains(c) { cur = nil }
+        if by < 0 {
+            var earlier: [Date] = days
+            if let c = cur { earlier = days.filter { $0 < c } }
+            if let last = earlier.last { cur = last }
+        } else if let c = cur {
+            cur = days.first { $0 > c }
+        }
+        doneDay = cur
+        changed()
+        shell?.contentChanged()
+    }
+}

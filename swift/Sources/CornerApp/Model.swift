@@ -80,6 +80,7 @@ final class AppModel: ObservableObject {
     var planKeepStarted = false
     var planOrder: [String]? = nil  // the list order the last applied plan replaced
     var routinesOpen = false
+    var doneDay: Date? = nil     // Full Mode's Done card: the earlier day it is showing; nil = today (WorkModel.swift)
     var maxCardH: CGFloat = 600  // the tallest the card may be on this screen (set by the shell)
     var editRoutine: String? = nil
     var editRoutineText = ""

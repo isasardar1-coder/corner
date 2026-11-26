@@ -889,12 +889,12 @@ namespace Corner
         void UpdateHeader()
         {
             var inv = CultureInfo.InvariantCulture;
-            int open = data.Tasks.Count(t => !t.Done), done = data.Tasks.Count - open;
+            int open = data.Tasks.Count(t => !t.Done), done = DoneToday().Count, all = open + done; // today's: what is open and what was done today
             headLogo.ToolTip = DateTime.Now.ToString("dddd, MMMM d", inv) + (open > 0 ? "  ·  " + open + " open" : "");
 
             DrawFocus(); // the next-task box follows every change (Focus.cs)
-            double f = data.Tasks.Count == 0 ? 0 : (double)done / data.Tasks.Count;
-            ringDisc.ToolTip = data.Tasks.Count == 0 ? "Progress: fills as tasks are ticked off" : "Progress: " + done + " of " + data.Tasks.Count + " tasks done";
+            double f = all == 0 ? 0 : (double)done / all;
+            ringDisc.ToolTip = all == 0 ? "Progress: fills as tasks are ticked off" : "Progress: " + done + " of " + all + " tasks done today";
             const double c = 12, r = 9.5;
             if (f <= 0) ringArc.Data = null;
             else if (f >= 0.999) ringArc.Data = new EllipseGeometry(new Point(c, c), r, r);
@@ -915,7 +915,7 @@ namespace Corner
             commitEdit = null;
             list.Children.Clear(); rows.Clear(); rowTimers.Clear();
             var active = data.Tasks.Where(t => !t.Done).ToList();
-            var done = data.Tasks.Where(t => t.Done).OrderByDescending(t => t.DoneAt ?? "").ToList();
+            var done = DoneToday(); // (Work.cs)
 
             foreach (var t in active) { var r = MakeRow(t); rows.Add(r); list.Children.Add(r.Wrap); }
             if (active.Count == 0)
@@ -1056,6 +1056,16 @@ namespace Corner
                 }
                 chip.MouseLeftButtonDown += (s, e) => { e.Handled = true; whenOpenId = whenOpenId == t.Id ? null : t.Id; Rebuild(); };
                 main.Children.Add(RowSide(t, chip, main)); // the timer; effort and date beside it in Full Mode, on the tooltip otherwise (Focus.cs)
+            }
+            else
+            {   // done: how long it was worked on and from when to when (Work.cs). Beside the title in Full Mode, under it in the corner panel
+                string note = DoneNote(t);
+                if (note != null)
+                {
+                    var noteText = new TextBlock { Text = note, FontSize = Z(11), Foreground = T.Muted, VerticalAlignment = VerticalAlignment.Center };
+                    if (Slim) { noteText.Margin = new Thickness(RowOver + ck + Sp(10, 8), -4, RowOver, 5); wrap.Children.Add(noteText); }
+                    else { noteText.Margin = new Thickness(8, 0, 0, 1); Grid.SetColumn(noteText, 3); main.Children.Add(noteText); }
+                }
             }
 
             // delete

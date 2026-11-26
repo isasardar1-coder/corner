@@ -918,6 +918,62 @@ enum Program {
         }
         check("a stretch across midnight ends the next day", pwMidnight)
 
+        // Done shows how long and from when to when (WorkLog.spanOf, dur)
+        func dnW(_ id: String, _ hour: Double, _ mins: Double) -> WorkRow {
+            let st: Date = day.addingHours(hour)
+            return WorkRow(start: st, end: st.addingMinutes(mins), minutes: mins, id: id, title: id)
+        }
+        let dnRows: [WorkRow] = [dnW("a", 9, 20), dnW("b", 9.5, 30), dnW("a", 11, 25), dnW("a", 11.5, 0), dnW("a", -30, 40), dnW("a", 26, 10)]
+        var dnOk = false
+        if let dnSpan = WorkLog.spanOf(dnRows, "a", day) {
+            let dnTo: Date = day.addingHours(26.0).addingMinutes(10.0)
+            dnOk = abs(dnSpan.minutes - 55) < 0.01 && dnSpan.from == day.addingHours(9.0) && dnSpan.to == dnTo
+        }
+        check("a done task's work today: 20 + 25 + 10 min, 09:00 to 02:10 (the small hours count; an earlier day and an empty row do not)", dnOk)
+        let dnNone: Bool = WorkLog.spanOf(dnRows, "c", day) == nil && WorkLog.spanOf(dnRows, "b", day.addingDays(1)) == nil
+        check("a task never timed today has no span", dnNone)
+        let dnDur: Bool = WorkLog.dur(0.3) == "under 1m" && WorkLog.dur(44.6) == "45m" && WorkLog.dur(60) == "1h" && WorkLog.dur(65) == "1h 05m"
+        check("lengths in words: under 1m, 45m, 1h, 1h 05m", dnDur, WorkLog.dur(65))
+
+        // the days before today (History)
+        func hyD(_ id: String, _ daysAgo: Int, _ hour: Double, _ timer: Double) -> TaskLog.Row {
+            let r = TaskLog.Row()
+            r.day = day.addingDays(-daysAgo)
+            r.at = r.day.addingHours(hour)
+            r.id = id
+            r.title = id
+            r.timerMinutes = timer
+            return r
+        }
+        let hyDone: [TaskLog.Row] = [hyD("a", 0, 11.5, 45), hyD("b", 0, 10, 0), hyD("late", 0, 1.5, 0), hyD("old", 3, 10, 18)]
+        let hyDays: [Date] = History.days(dnRows, hyDone)
+        var hyDaysOk = false
+        if hyDays.count == 3 { hyDaysOk = hyDays[0] == day.addingDays(-3) && hyDays[1] == day.addingDays(-2) && hyDays[2] == day }
+        let hyDayNames: [String] = hyDays.map { String(CornerTime.formatDay($0).suffix(5)) }
+        check("history: the days with a tick or timed work, oldest first (3 days ago, work 2 days ago, today)", hyDaysOk, hyDayNames.joined(separator: " "))
+        let hyOf: [History.Item] = History.of(dnRows, hyDone, day)
+        var hyOfOk = false
+        if hyOf.count == 3 {
+            let hyIds: Bool = hyOf[0].id == "late" && hyOf[1].id == "a" && hyOf[2].id == "b"
+            let hyMin: Double = hyOf[1].span?.minutes ?? 0
+            hyOfOk = hyIds && abs(hyMin - 55) < 0.01 && hyOf[2].span != nil && hyOf[0].span == nil
+        }
+        let hyIdNames: [String] = hyOf.map { $0.id }
+        check("history: a day's finished tasks, latest first, a tick at 01:30 that night before the rest; each with its work that day", hyOfOk, hyIdNames.joined(separator: " "))
+        let hyToday: Double = History.worked(dnRows, day)
+        let hyBefore: Double = History.worked(dnRows, day.addingDays(-2))
+        let hyNone: Double = History.worked(dnRows, day.addingDays(-3))
+        check("history: the day's time worked is every timed stretch, finished or not (55 + 30), and 40 two days ago", abs(hyToday - 85) < 0.01 && abs(hyBefore - 40) < 0.01 && hyNone == 0)
+        let hyOld: [History.Item] = History.of(dnRows, hyDone, day.addingDays(-3))
+        var hyOldOk = false
+        var hyOldNote = ""
+        if hyOld.count == 1 {
+            hyOldNote = WorkLog.note(hyOld[0].span, hyOld[0].at, hyOld[0].timerMinutes)
+            let hyClock: String = EnergyDay.clock(hyOld[0].at)
+            hyOldOk = hyOldNote == "18m · " + hyClock && WorkLog.note(nil, hyOld[0].at) == hyClock
+        }
+        check("history: a tick from before work.csv keeps its timer minutes and says when it was ticked", hyOldOk, hyOldNote)
+
         func pwW(_ title: String, _ daysAgo: Int, _ hour: Double, _ mins: Double, _ effort: String) -> WorkRow {
             let st: Date = day.addingDays(-daysAgo).addingHours(hour)
             return WorkRow(start: st, end: st.addingMinutes(mins), minutes: mins, id: title + String(daysAgo), title: title,

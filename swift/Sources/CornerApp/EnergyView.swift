@@ -1104,36 +1104,73 @@ struct RoutinesCard: View {
 }
 
 /// Full Mode: the done tasks, under the routines. It is the Routines box again in the pale shade: one slim line
-/// while closed, the done tasks under it when open ("Clear" removes them).
+/// while closed, the done tasks under it when open ("Clear" removes them). Today's by default; the arrows in its
+/// head step back through the days before (from done.csv and work.csv, so a day stays after "Clear") and forward
+/// again to today. The head also says the day's time worked.
 struct DoneCard: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.m) var m
     @State private var clearHot = false
 
     var body: some View {
-        let done: [TaskItem] = model.data.tasks.filter { $0.done }.sorted { ($0.doneAt ?? "") > ($1.doneAt ?? "") }
-        if !done.isEmpty { card(done) }
+        let done: [TaskItem] = model.doneToday()
+        let past: [Date] = model.pastDays()
+        if !done.isEmpty || !past.isEmpty { card(done, past) }
     }
 
-    func card(_ done: [TaskItem]) -> some View {
+    static func dayName(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.calendar = CornerTime.calendar
+        f.timeZone = CornerTime.calendar.timeZone
+        f.dateFormat = "EEE d MMM"
+        return f.string(from: d)
+    }
+
+    func card(_ done: [TaskItem], _ past: [Date]) -> some View {
         let open: Bool = model.data.doneOpen
+        var shown: Date? = model.doneDay
+        if let d = shown, !past.contains(d) { shown = nil }
+        let isToday: Bool = shown == nil
+        let day: Date = shown ?? SleepLog.today(Date())
+        let items: [History.Item] = isToday ? [] : History.of(WorkLog.rows, DoneHistory.doneRows(), day)
+        let n: Int = isToday ? done.count : items.count
+        let worked: Double = History.worked(WorkLog.rows, day) // all the day's timed work, finished or not
+        let count: String = String(n) + (worked >= 0.5 ? "  ·  " + WorkLog.dur(worked) + " worked" : "")
+        let canBack: Bool = past.contains { $0 < day }
+        let label: String = isToday ? "Today" : DoneCard.dayName(day)
+        let anyDone: Bool = model.data.tasks.contains { $0.done }
+        let empty: String = isToday ? "Nothing finished yet today." : "Nothing finished that day."
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
-                SectionHead(text: "Done", count: String(done.count), open: open)
+                SectionHead(text: "Done", count: count, open: open)
                 Spacer(minLength: 0)
                 if open {
-                    Text("Clear").font(m.font(11.5)).foregroundColor(clearHot ? T.danger : T.muted)
-                        .padding(.leading, 8).padding(.vertical, 2)
-                        .contentShape(Rectangle())
-                        .onHover { clearHot = $0 }
-                        .onTapGesture { model.clearDone() }
+                    DayArrow(back: true, on: canBack) { model.doneStep(-1) }
+                    Text(label).font(m.font(11.5)).foregroundColor(T.text).lineLimit(1).fixedSize()
+                    DayArrow(back: false, on: !isToday) { model.doneStep(1) }
+                    if isToday && anyDone {
+                        Text("Clear").font(m.font(11.5)).foregroundColor(clearHot ? T.danger : T.muted)
+                            .padding(.leading, 8).padding(.vertical, 2)
+                            .contentShape(Rectangle())
+                            .onHover { clearHot = $0 }
+                            .onTapGesture { model.clearDone() }
+                    }
                 }
             }
             .contentShape(Rectangle())
             .onTapGesture { model.toggleDoneOpen() }
             if open {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(done, id: \.id) { t in TaskRow(t: t, dragging: false) }
+                    if isToday {
+                        ForEach(done, id: \.id) { t in TaskRow(t: t, dragging: false) }
+                    } else {
+                        ForEach(Array(items.enumerated()), id: \.offset) { pair in HistoryRow(it: pair.element) }
+                    }
+                    if n == 0 {
+                        Text(empty).font(m.font(12)).foregroundColor(T.muted)
+                            .padding(.horizontal, rowOver).padding(.vertical, 4)
+                    }
                 }
                 .padding(.horizontal, -rowOver) // (a row reaches rowOver past its content)
                 .padding(.vertical, m.sp(4, 3))
@@ -1143,6 +1180,57 @@ struct DoneCard: View {
         .padding(.horizontal, m.padX)
         .padding(.vertical, m.sp(5, 4))
         .plate(.soft, radius: m.radius, rim: m.radius)
+    }
+}
+
+/// The Done card's "the day before" and "the day after"; faint when there is none.
+struct DayArrow: View {
+    let back: Bool
+    let on: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Glyph(d: back ? "M5.5,1 L2.5,4 L5.5,7" : "M2.5,1 L5.5,4 L2.5,7", color: T.text, th: 1.5, w: 8, h: 8)
+            .opacity(on ? 1 : 0.3)
+            .padding(.horizontal, 7).padding(.vertical, 5)
+            .contentShape(Rectangle())
+            .onTapGesture { if on { action() } }
+            .help(on ? (back ? "The day before" : "The day after") : "")
+    }
+}
+
+/// A finished task of an earlier day: the look of a done row, but only to read.
+struct HistoryRow: View {
+    @Environment(\.m) var m
+    let it: History.Item
+
+    var body: some View {
+        let rowH: CGFloat = m.sp(34, 26)
+        let ck: CGFloat = m.sp(18, 15)
+        let note: String = WorkLog.note(it.span, it.at, it.timerMinutes)
+        HStack(alignment: .top, spacing: 0) {
+            ZStack {
+                Circle().fill(T.ctl)
+                Glyph(d: "M5,9.4 L7.9,12.2 L13.2,6.2", color: T.text, th: 1.8, w: 18, h: 18)
+            }
+            .frame(width: 18, height: 18)
+            .scaleEffect(ck / 18)
+            .frame(width: ck, height: ck)
+            .padding(.leading, rowOver)
+            .frame(width: rowOver + ck + m.sp(10, 8), height: rowH, alignment: .leading)
+            Text(it.title)
+                .font(m.font(13.5))
+                .foregroundColor(T.muted)
+                .strikethrough(true, color: T.muted)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, m.sp(8, 5)).padding(.bottom, m.sp(9, 6)).padding(.trailing, m.sp(6, 4))
+                .frame(maxWidth: .infinity, minHeight: rowH, alignment: .leading)
+            Text(note).font(m.font(11)).foregroundColor(T.muted).lineLimit(1).fixedSize()
+                .padding(.leading, 8).padding(.bottom, 1)
+                .frame(height: rowH)
+            Color.clear.frame(width: rowOver, height: 1)
+        }
+        .frame(minHeight: rowH)
     }
 }
 

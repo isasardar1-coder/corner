@@ -287,29 +287,7 @@ namespace Corner
             FillDone();
         }
 
-        void FillDone()
-        {
-            if (doneHost == null || doneCard == null) return;
-            doneHost.Children.Clear();
-            var done = data.Tasks.Where(t => t.Done).OrderByDescending(t => t.DoneAt ?? "").ToList();
-            doneCard.Visibility = full && done.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-            ShowSections();
-            if (!full || done.Count == 0) return;
-            var head = (Grid)SectionHead("Done", done.Count.ToString(), data.DoneOpen, () => { data.DoneOpen = !data.DoneOpen; Save(); Rebuild(); });
-            if (data.DoneOpen)
-            {
-                var clear = new TextBlock { Text = "Clear", FontSize = Z(11.5), Foreground = T.Muted, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(8, 2, 0, 2), Background = System.Windows.Media.Brushes.Transparent, Cursor = System.Windows.Input.Cursors.Hand };
-                clear.MouseEnter += (s, e) => clear.Foreground = T.Danger;
-                clear.MouseLeave += (s, e) => clear.Foreground = T.Muted;
-                clear.MouseLeftButtonDown += (s, e) => { e.Handled = true; data.Tasks.RemoveAll(t => t.Done); Save(); Rebuild(); };
-                head.Children.Add(clear);
-            }
-            doneHost.Children.Add(head);
-            if (!data.DoneOpen) return;
-            var rowsHost = new StackPanel { Margin = new Thickness(-RowOver, Sp(4, 3), -RowOver, Sp(4, 3)) }; // (a row reaches RowOver past its content)
-            foreach (var t in done) rowsHost.Children.Add(MakeRow(t).Wrap);
-            doneHost.Children.Add(rowsHost);
-        }
+        // (FillDone is in Work.cs, with the days before today)
 
         // ------------------------------------------------------------ "Today's plan", beside the planned tasks
 

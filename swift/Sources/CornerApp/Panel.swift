@@ -739,6 +739,25 @@ final class PanelController: NSObject, NSMenuDelegate {
         }
     }
 
+    /// Test data for Done: the finished task timed today, and yesterday two finished tasks and one stretch left open.
+    func demoDone() {
+        let now: Date = Date()
+        if let t = model.data.tasks.first(where: { $0.done }) {
+            t.doneAt = AppModel.iso(now)
+            let from: Date = now.addingTimeInterval(-50 * 60)
+            WorkLog.add(WorkRow(start: from, end: from.addingTimeInterval(45 * 60), minutes: 45, id: t.id, title: t.title, ended: "completed"))
+        }
+        let then: Date = SleepLog.today(now).addingDays(-1).addingTimeInterval(10 * 3600)
+        let a = TaskItem(id: "demo-a", title: "Write the report")
+        let b = TaskItem(id: "demo-b", title: "Call the bank")
+        let aEnd: Date = then.addingTimeInterval(86 * 60)
+        WorkLog.add(WorkRow(start: then, end: aEnd, minutes: 86, id: a.id, title: a.title, ended: "completed"))
+        let cStart: Date = then.addingTimeInterval(3 * 3600)
+        WorkLog.add(WorkRow(start: cStart, end: cStart.addingTimeInterval(20 * 60), minutes: 20, id: "demo-c", title: "Reading", ended: "paused"))
+        TaskLog.done(a, at: aEnd, day: then.dateOnly, timerMinutes: 86, zone: "peak")
+        TaskLog.done(b, at: then.addingTimeInterval(5 * 3600), day: then.dateOnly, timerMinutes: 0, zone: "between")
+    }
+
     func demoAfterShow(_ mode: String) {
         switch mode {
         case "all": model.allOpen = true
@@ -776,6 +795,11 @@ final class PanelController: NSObject, NSMenuDelegate {
                 if mode == "paused" { model.timerClick(t) }
             }
         case "order": model.makePlan()
+        case "donetimes", "hist": // Done with its times; "hist": the Done card a day back
+            model.data.doneOpen = true
+            model.allOpen = true
+            demoDone()
+            if mode == "hist" { model.doneStep(-1) }
         case "habits": model.addOpen = true
         case "planning": model.toggleSettings()
         default: break

@@ -100,6 +100,75 @@ namespace Corner
             }
             catch (Exception ex) { Store.Log(ex); }
         }
+
+        public class Span { public double Minutes; public DateTime From, To; }
+
+        /// The work on one task on one day (a day runs to 04:00, as everywhere): the minutes of its stretches together,
+        /// when the first began and when the last ended. Null when it was not timed that day.
+        public static Span SpanOf(IEnumerable<WorkRow> rows, string id, DateTime day)
+        {
+            Span s = null;
+            foreach (var r in rows ?? new WorkRow[0])
+            {
+                if (r.Id != id || r.End <= r.Start || SleepLog.Today(r.Start) != day.Date) continue;
+                if (s == null) s = new Span { From = r.Start, To = r.End };
+                if (r.Start < s.From) s.From = r.Start;
+                if (r.End > s.To) s.To = r.End;
+                s.Minutes += r.Minutes;
+            }
+            return s;
+        }
+
+        /// A length of work in words: "under 1m", "45m", "1h", "1h 05m".
+        public static string Dur(double minutes)
+        {
+            int m = (int)Math.Round(minutes);
+            if (m < 1) return "under 1m";
+            return m < 60 ? m + "m" : m / 60 + "h" + (m % 60 > 0 ? " " + (m % 60).ToString("00", Inv) + "m" : "");
+        }
+
+        /// Beside a done task: "45m · 09:10–09:55" when it was timed that day; else the time it was ticked off, after
+        /// the minutes an older timer counted, if any (done.csv from before work.csv: no start and end are known).
+        public static string Note(Span s, DateTime at, double timerMinutes = 0)
+        {
+            if (s != null) return Dur(s.Minutes) + " · " + EnergyDay.Clock(s.From) + "–" + EnergyDay.Clock(s.To);
+            return (timerMinutes >= 1 ? Dur(timerMinutes) + " · " : "") + EnergyDay.Clock(at);
+        }
+    }
+
+    // ---------------------------------------------------------------- the days before today, from done.csv and work.csv
+
+    public static class History
+    {
+        public class Item { public string Id, Title; public DateTime At; public WorkLog.Span Span; public double TimerMinutes; }
+
+        static bool Timed(WorkRow r, DateTime day) { return r.End > r.Start && SleepLog.Today(r.Start) == day.Date; }
+
+        /// Every day with something to show: a task ticked off, or timed work. Oldest first.
+        public static List<DateTime> Days(IEnumerable<WorkRow> work, IEnumerable<TaskLog.Row> done)
+        {
+            var set = new HashSet<DateTime>();
+            foreach (var d in done ?? new TaskLog.Row[0]) set.Add(d.Day.Date);
+            foreach (var r in work ?? new WorkRow[0]) if (r.End > r.Start) set.Add(SleepLog.Today(r.Start));
+            return set.OrderBy(d => d).ToList();
+        }
+
+        /// What was finished on a day, latest first, each with its work that day.
+        public static List<Item> Of(IEnumerable<WorkRow> work, IEnumerable<TaskLog.Row> done, DateTime day)
+        {
+            var rows = (work ?? new WorkRow[0]).ToList();
+            return (done ?? new TaskLog.Row[0]).Where(d => d.Day.Date == day.Date).Select(d => new Item
+            {
+                Id = d.Id, Title = d.Title, TimerMinutes = d.TimerMinutes, Span = WorkLog.SpanOf(rows, d.Id, day),
+                At = d.At.TimeOfDay.TotalHours < SleepLog.DayStartsAt ? d.At.AddDays(1) : d.At // the small hours belong to the day before (done.csv)
+            }).OrderByDescending(i => i.At).ToList();
+        }
+
+        /// All the timed work of a day, in minutes: finished tasks or not.
+        public static double Worked(IEnumerable<WorkRow> work, DateTime day)
+        {
+            return (work ?? new WorkRow[0]).Where(r => Timed(r, day)).Sum(r => r.Minutes);
+        }
     }
 
     // ---------------------------------------------------------------- what you usually do, and when
@@ -421,6 +490,124 @@ namespace Corner
             if (idle >= AwayIdleSec) AutoPause(DateTime.Now.AddSeconds(-idle));
         }
 
+        // ------------------------------------------------------------ Done: today's, each with how long and from when to when
+
+        static DateTime? DoneTime(TaskItem t)
+        {
+            DateTime at;
+            return t.DoneAt != null && DateTime.TryParse(t.DoneAt, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out at) ? at : (DateTime?)null;
+        }
+
+        /// The tasks completed today, latest first. Earlier days' are not shown: done.csv and work.csv keep them.
+        /// (A task whose time of completion cannot be read is shown, so nothing done is ever lost from view by a bad date.)
+        List<TaskItem> DoneToday()
+        {
+            var today = SleepLog.Today(DateTime.Now); // (DoneAt is written from the real clock)
+            return data.Tasks.Where(t => { if (!t.Done) return false; var at = DoneTime(t); return at == null || SleepLog.Today(at.Value) == today; })
+                .OrderByDescending(t => t.DoneAt ?? "").ToList();
+        }
+
+        /// Beside a done task: "45m · 09:10–09:55" when it was timed that day, else the time it was ticked off.
+        string DoneNote(TaskItem t)
+        {
+            var at = DoneTime(t);
+            if (at == null) return null;
+            return WorkLog.Note(WorkLog.SpanOf(WorkLog.Rows, t.Id, SleepLog.Today(at.Value)), at.Value);
+        }
+
+        // The Done card in Full Mode: today's by default; the arrows in its head step back through the days before
+        // (from done.csv and work.csv, so a day stays even after "Clear"), and forward again to today.
+
+        DateTime? doneDay;                              // the earlier day being shown; null = today
+        List<TaskLog.Row> histDone; int histChanges = -1;
+        List<TaskLog.Row> DoneRows { get { if (histDone == null || histChanges != TaskLog.Changes) { histChanges = TaskLog.Changes; histDone = TaskLog.ReadDone(); } return histDone; } }
+
+        List<DateTime> PastDays()
+        {
+            var today = SleepLog.Today(DateTime.Now);
+            return History.Days(WorkLog.Rows, DoneRows).Where(d => d < today).ToList();
+        }
+
+        /// One day back (-1) or forward (+1), skipping days with nothing to show. Forward from the last one is today.
+        void DoneStep(int by)
+        {
+            var days = PastDays();
+            if (by < 0) { var earlier = days.Where(d => doneDay == null || d < doneDay.Value).ToList(); if (earlier.Count > 0) doneDay = earlier[earlier.Count - 1]; }
+            else if (doneDay != null) { var later = days.Where(d => d > doneDay.Value).ToList(); doneDay = later.Count > 0 ? later[0] : (DateTime?)null; }
+            FillDone();
+        }
+
+        FrameworkElement DayArrow(bool back, bool on)
+        {
+            var hit = new Border { Background = Brushes.Transparent, Padding = new Thickness(7, 5, 7, 5), Opacity = on ? 1 : 0.3, Child = Glyph(back ? "M5.5,1 L2.5,4 L5.5,7" : "M2.5,1 L5.5,4 L2.5,7", T.Text, 1.5, 8, 8) };
+            if (on) { hit.Cursor = Cursors.Hand; hit.ToolTip = back ? "The day before" : "The day after"; }
+            hit.MouseLeftButtonDown += (s, e) => { e.Handled = true; if (on) DoneStep(back ? -1 : 1); };
+            return hit;
+        }
+
+        /// A finished task of an earlier day: the look of a done row, but only to read.
+        FrameworkElement HistoryRow(History.Item it)
+        {
+            double rowH = Sp(34, 26), ck = Sp(18, 15);
+            var g = new Grid { MinHeight = rowH };
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(RowOver + ck + Sp(10, 8)) });
+            g.ColumnDefinitions.Add(new ColumnDefinition());
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(RowOver) });
+            var mark = new Grid { Width = 18, Height = 18, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(RowOver, (rowH - ck) / 2, 0, 0), LayoutTransform = new ScaleTransform(ck / 18, ck / 18) };
+            mark.Children.Add(new System.Windows.Shapes.Ellipse { Width = 18, Height = 18, Fill = T.Ctl });
+            mark.Children.Add(Glyph("M5,9.4 L7.9,12.2 L13.2,6.2", T.Text, 1.8, 18, 18));
+            g.Children.Add(mark);
+            var label = new TextBlock { Text = it.Title, TextWrapping = TextWrapping.Wrap, FontSize = Z(13.5), Foreground = T.Muted, Margin = new Thickness(0, 8, 6, 9), VerticalAlignment = VerticalAlignment.Center, TextDecorations = TextDecorations.Strikethrough };
+            Grid.SetColumn(label, 1); g.Children.Add(label);
+            var note = new TextBlock { Text = WorkLog.Note(it.Span, it.At, it.TimerMinutes), FontSize = Z(11), Foreground = T.Muted, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 1) };
+            Grid.SetColumn(note, 2); g.Children.Add(note);
+            return g;
+        }
+
+        void FillDone()
+        {
+            if (doneHost == null || doneCard == null) return;
+            doneHost.Children.Clear();
+            var done = DoneToday();
+            var past = full ? PastDays() : new List<DateTime>();
+            if (doneDay != null && !past.Contains(doneDay.Value)) doneDay = null;
+            bool any = done.Count > 0 || past.Count > 0;
+            doneCard.Visibility = full && any ? Visibility.Visible : Visibility.Collapsed;
+            ShowSections();
+            if (!full || !any) return;
+
+            var day = doneDay ?? SleepLog.Today(DateTime.Now);
+            var items = doneDay != null ? History.Of(WorkLog.Rows, DoneRows, day) : null;
+            double worked = History.Worked(WorkLog.Rows, day); // all the day's timed work, finished or not
+            string count = (items != null ? items.Count : done.Count) + (worked >= 0.5 ? "  ·  " + WorkLog.Dur(worked) + " worked" : "");
+            var head = (Grid)SectionHead("Done", count, data.DoneOpen, () => { data.DoneOpen = !data.DoneOpen; Save(); Rebuild(); });
+            if (data.DoneOpen)
+            {
+                var right = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+                right.Children.Add(DayArrow(true, past.Any(d => d < day)));
+                right.Children.Add(new TextBlock { Text = doneDay == null ? "Today" : day.ToString("ddd d MMM", CultureInfo.InvariantCulture), FontSize = Z(11.5), Foreground = T.Text, VerticalAlignment = VerticalAlignment.Center });
+                right.Children.Add(DayArrow(false, doneDay != null));
+                if (doneDay == null && data.Tasks.Any(t => t.Done))
+                {
+                    var clear = new TextBlock { Text = "Clear", FontSize = Z(11.5), Foreground = T.Muted, VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(8, 2, 0, 2), Background = Brushes.Transparent, Cursor = Cursors.Hand };
+                    clear.MouseEnter += (s, e) => clear.Foreground = T.Danger;
+                    clear.MouseLeave += (s, e) => clear.Foreground = T.Muted;
+                    clear.MouseLeftButtonDown += (s, e) => { e.Handled = true; data.Tasks.RemoveAll(t => t.Done); Save(); Rebuild(); };
+                    right.Children.Add(clear);
+                }
+                head.Children.Add(right);
+            }
+            doneHost.Children.Add(head);
+            if (!data.DoneOpen) return;
+            var rowsHost = new StackPanel { Margin = new Thickness(-RowOver, Sp(4, 3), -RowOver, Sp(4, 3)) }; // (a row reaches RowOver past its content)
+            if (items != null) foreach (var it in items) rowsHost.Children.Add(HistoryRow(it));
+            else foreach (var t in done) rowsHost.Children.Add(MakeRow(t).Wrap);
+            if (rowsHost.Children.Count == 0)
+                rowsHost.Children.Add(new TextBlock { Text = doneDay == null ? "Nothing finished yet today." : "Nothing finished that day.", FontSize = Z(12), Foreground = T.Muted, Margin = new Thickness(RowOver, 4, RowOver, 4) });
+            doneHost.Children.Add(rowsHost);
+        }
+
         // ------------------------------------------------------------ the order
 
         static double DayKey(DateTime d) { return d.Year * 10000 + d.Month * 100 + d.Day; }
@@ -602,6 +789,7 @@ namespace Corner
             {
                 if (step == "all") { allOpen = true; FocusLayout(); }
                 if (step == "add") { addOpen = true; FocusLayout(); }
+                if (step == "hist" || step == "hist2") { data.DoneOpen = true; DoneStep(-1); if (step == "hist2") DoneStep(-1); } // the Done card on an earlier day
                 if (step == "sort") { ResortData(); Rebuild(); DrawFocus(); }
                 if (step == "work" || step == "over") { StartTimer(Upcoming()[0]); workStart = workStart.AddSeconds(step == "over" ? -4000 : -754); Rebuild(); RepaintTimers(); DrawFocus(); }
                 if (step == "pause") { TimerClick(Upcoming()[0]); }

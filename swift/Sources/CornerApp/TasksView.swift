@@ -48,7 +48,7 @@ struct TaskListCard: View {
 
     var body: some View {
         let active: [TaskItem] = model.data.tasks.filter { !$0.done }
-        let done: [TaskItem] = model.full ? [] : model.data.tasks.filter { $0.done }.sorted { ($0.doneAt ?? "") > ($1.doneAt ?? "") }
+        let done: [TaskItem] = model.full ? [] : model.doneToday() // today's only (WorkModel.swift)
         let anyDone: Bool = model.data.tasks.contains { $0.done }
         let hp: CGFloat = m.padX - rowOver
         rows(active, done, anyDone)
@@ -305,6 +305,12 @@ struct TaskRow: View {
                     .fixedSize()
                     .frame(height: rowH)
                 }
+                // done: how long it was worked on and from when to when. Beside the title in Full Mode, under it in the corner panel
+                if t.done && !m.slim {
+                    DoneNoteText(t: t)
+                        .padding(.leading, 8).padding(.bottom, 1)
+                        .frame(height: rowH)
+                }
                 Color.clear.frame(width: rowOver, height: 1)
             }
             .frame(minHeight: rowH)
@@ -319,8 +325,24 @@ struct TaskRow: View {
             .onHover { hot = $0 }
             .help(model.full || t.done ? "" : t.title + "\n" + AppModel.infoText(t))
 
+            if t.done && m.slim {
+                DoneNoteText(t: t)
+                    .padding(.leading, rowOver + ck + m.sp(10, 8)).padding(.top, -4).padding(.bottom, 5)
+            }
             if model.whenOpenId == t.id && !t.done { WhenStrip(t: t) }
         }
+    }
+}
+
+/// "45m · 09:10–09:55" for a done task; nothing when its time of completion is not known.
+struct DoneNoteText: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.m) var m
+    let t: TaskItem
+
+    var body: some View {
+        let note: String = model.doneNote(t) ?? ""
+        Text(note).font(m.font(11)).foregroundColor(T.muted).lineLimit(1).fixedSize()
     }
 }
 

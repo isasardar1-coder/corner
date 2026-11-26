@@ -157,8 +157,8 @@ struct RingDisc: View {
     @Environment(\.m) var m
     let cell: CGFloat
     var body: some View {
-        let all = model.data.tasks.count
-        let done = model.data.tasks.filter { $0.done }.count
+        let done = model.doneToday().count // today's: what is open and what was done today
+        let all = model.openCount + done
         let f: CGFloat = all == 0 ? 0 : CGFloat(done) / CGFloat(all)
         let k = m.sp(0.75, 0.58)
         ZStack {
@@ -172,7 +172,7 @@ struct RingDisc: View {
         .scaleEffect(k)
         .frame(width: cell, height: cell)
         .plate(.field, rim: cell / 2, disc: true)
-        .help(all == 0 ? "Progress: fills as tasks are ticked off" : "Progress: " + String(done) + " of " + String(all) + " tasks done")
+        .help(all == 0 ? "Progress: fills as tasks are ticked off" : "Progress: " + String(done) + " of " + String(all) + " tasks done today")
     }
 }
 

@@ -151,6 +151,108 @@ public enum WorkLog {
         let fresh: Bool = !FileManager.default.fileExists(atPath: file)
         Store.appendText(file, (fresh ? head + Store.newline : "") + line(r) + Store.newline, bom: fresh)
     }
+
+    public final class Span {
+        public var minutes: Double
+        public var from: Date
+        public var to: Date
+
+        public init(minutes: Double, from: Date, to: Date) {
+            self.minutes = minutes
+            self.from = from
+            self.to = to
+        }
+    }
+
+    /// The work on one task on one day (a day runs to 04:00, as everywhere): the minutes of its stretches together,
+    /// when the first began and when the last ended. Nil when it was not timed that day.
+    public static func spanOf(_ rows: [WorkRow]?, _ id: String, _ day: Date) -> Span? {
+        var s: Span? = nil
+        let want: Date = day.dateOnly
+        for r in rows ?? [] {
+            if r.id != id || r.end <= r.start || SleepLog.today(r.start) != want { continue }
+            if let have = s {
+                if r.start < have.from { have.from = r.start }
+                if r.end > have.to { have.to = r.end }
+                have.minutes += r.minutes
+            } else {
+                s = Span(minutes: r.minutes, from: r.start, to: r.end)
+            }
+        }
+        return s
+    }
+
+    /// A length of work in words: "under 1m", "45m", "1h", "1h 05m".
+    public static func dur(_ minutes: Double) -> String {
+        let m: Int = Int(NetFormat.round(minutes))
+        if m < 1 { return "under 1m" }
+        if m < 60 { return String(m) + "m" }
+        let hours: String = String(m / 60) + "h"
+        let rest: Int = m % 60
+        if rest == 0 { return hours }
+        return hours + " " + (rest < 10 ? "0" : "") + String(rest) + "m"
+    }
+
+    /// Beside a done task: "45m · 09:10–09:55" when it was timed that day; else the time it was ticked off, after
+    /// the minutes an older timer counted, if any (done.csv from before work.csv: no start and end are known).
+    public static func note(_ s: Span?, _ at: Date, _ timerMinutes: Double = 0) -> String {
+        if let span = s {
+            return dur(span.minutes) + " · " + EnergyDay.clock(span.from) + "–" + EnergyDay.clock(span.to)
+        }
+        let before: String = timerMinutes >= 1 ? dur(timerMinutes) + " · " : ""
+        return before + EnergyDay.clock(at)
+    }
+}
+
+// ---------------------------------------------------------------- the days before today, from done.csv and work.csv
+
+public enum History {
+    public final class Item {
+        public var id: String
+        public var title: String
+        public var at: Date
+        public var span: WorkLog.Span?
+        public var timerMinutes: Double
+
+        public init(id: String, title: String, at: Date, span: WorkLog.Span?, timerMinutes: Double) {
+            self.id = id
+            self.title = title
+            self.at = at
+            self.span = span
+            self.timerMinutes = timerMinutes
+        }
+    }
+
+    /// Every day with something to show: a task ticked off, or timed work. Oldest first.
+    public static func days(_ work: [WorkRow]?, _ done: [TaskLog.Row]?) -> [Date] {
+        var set = Set<Date>()
+        for d in done ?? [] { set.insert(d.day.dateOnly) }
+        for r in work ?? [] where r.end > r.start { set.insert(SleepLog.today(r.start)) }
+        return set.sorted()
+    }
+
+    /// What was finished on a day, latest first, each with its work that day.
+    public static func of(_ work: [WorkRow]?, _ done: [TaskLog.Row]?, _ day: Date) -> [Item] {
+        let rows: [WorkRow] = work ?? []
+        let want: Date = day.dateOnly
+        var list: [Item] = []
+        for d in done ?? [] {
+            if d.day.dateOnly != want { continue }
+            // the small hours belong to the day before (done.csv)
+            let small: Bool = d.at.timeOfDay / 3600 < Double(SleepLog.dayStartsAt)
+            let at: Date = small ? d.at.addingDays(1) : d.at
+            list.append(Item(id: d.id, title: d.title, at: at, span: WorkLog.spanOf(rows, d.id, day), timerMinutes: d.timerMinutes))
+        }
+        return stableSorted(list) { a, b in a.at > b.at }
+    }
+
+    /// All the timed work of a day, in minutes: finished tasks or not.
+    public static func worked(_ work: [WorkRow]?, _ day: Date) -> Double {
+        let want: Date = day.dateOnly
+        var sum = 0.0
+        for r in work ?? [] where r.end > r.start && SleepLog.today(r.start) == want { sum += r.minutes }
+        return sum
+    }
 }
 
 // ---------------------------------------------------------------- what you usually do, and when
