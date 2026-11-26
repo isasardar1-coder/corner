@@ -267,7 +267,7 @@ namespace Corner
 
         // ------------------------------------------------------------ Full Mode
 
-        const double FullW = 800, FullMinH = 540; // two equal columns of FullW / 2: tasks and energy
+        const double FullW = 800; // two equal columns of FullW / 2: tasks and energy
         bool full, quitting;
 
         void PlaceFull(Rect wa, double z)

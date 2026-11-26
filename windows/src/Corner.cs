@@ -702,7 +702,7 @@ namespace Corner
             double z = full ? fullScale : scale;
             zoom.ScaleX = z; zoom.ScaleY = z;
             card.Width = full ? FullW : CardW;
-            card.MinHeight = full ? Math.Min(FullMinH, (wa.Height - 2 * Pad - 40) / z) : 0;
+            card.MinHeight = 0; // Full Mode too: as high as its two columns, so an empty day or closed routines make it shorter
             if (full) { PlaceFull(wa, z); return; }
             Width = CardW * scale + Gap + Pad; Height = wa.Height; Left = OnRight ? wa.Right - Width : wa.Left; Top = wa.Top;
             card.HorizontalAlignment = OnRight ? HorizontalAlignment.Right : HorizontalAlignment.Left;
@@ -991,15 +991,15 @@ namespace Corner
             var ringHot = new Ellipse { Width = 18, Height = 18, Fill = T.Soft, Stroke = T.Text, StrokeThickness = 1.5, Opacity = 0, IsHitTestVisible = false }; // under the mouse the circle fills pale lime
             var fillScale = new ScaleTransform(t.Done ? 1 : 0, t.Done ? 1 : 0);
             var fill = new Ellipse { Width = 18, Height = 18, Fill = t.Done ? (Brush)T.Ctl : T.Accent, RenderTransformOrigin = new Point(0.5, 0.5), RenderTransform = fillScale, IsHitTestVisible = false };
-            bool worked = WorkedOn(t); // being worked on: the circle carries a tick, so the one control says "completed" (Work.cs)
-            var tick = Glyph("M5,9.4 L7.9,12.2 L13.2,6.2", t.Done || worked ? (Brush)T.Text : T.OnAccent, 1.8, 18, 18);
-            tick.Opacity = t.Done || worked ? 1 : 0;
-            if (worked) box.ToolTip = "Completed";
+            // an open task's tick shows only under the mouse, faintly, to say the circle ticks it off; the task being
+            // timed has an empty circle like the rest (a tick there looked like it was already done)
+            var tick = Glyph("M5,9.4 L7.9,12.2 L13.2,6.2", T.Text, 1.8, 18, 18);
+            tick.Opacity = t.Done ? 1 : 0;
             mark.Children.Add(new Ellipse { Width = 18, Height = 18, Stroke = t.Done ? (Brush)T.Ctl : T.Text, StrokeThickness = 1.5, IsHitTestVisible = false });
             mark.Children.Add(ringHot); mark.Children.Add(fill); mark.Children.Add(tick);
             box.Children.Add(mark);
-            box.MouseEnter += (s, e) => Anim(ringHot, OpacityProperty, 1, 100);
-            box.MouseLeave += (s, e) => Anim(ringHot, OpacityProperty, 0, 160);
+            box.MouseEnter += (s, e) => { Anim(ringHot, OpacityProperty, 1, 100); if (!t.Done) Anim(tick, OpacityProperty, 0.5, 100); };
+            box.MouseLeave += (s, e) => { Anim(ringHot, OpacityProperty, 0, 160); if (!t.Done) Anim(tick, OpacityProperty, 0, 160); };
             main.Children.Add(box);
 
             // title
@@ -1104,7 +1104,7 @@ namespace Corner
                 Anim(fillScale, ScaleTransform.ScaleYProperty, 1, 260, ease: Pop);
                 tick.Stroke = T.OnAccent;
                 tick.StrokeDashArray = new DoubleCollection(new double[] { 9, 9 });
-                tick.StrokeDashOffset = 9; tick.Opacity = 1;
+                tick.StrokeDashOffset = 9; Anim(tick, OpacityProperty, 1, 1); // (an animation, as the hover's is one)
                 Anim(tick, Shape.StrokeDashOffsetProperty, 0, 240, delay: 90);
                 label.TextDecorations = TextDecorations.Strikethrough;
                 Anim(label, OpacityProperty, 0.45, 260);

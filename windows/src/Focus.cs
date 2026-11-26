@@ -215,17 +215,15 @@ namespace Corner
             main.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(lead) });
             main.ColumnDefinitions.Add(new ColumnDefinition());
             main.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var box = new Grid { Height = first, VerticalAlignment = VerticalAlignment.Top, Background = Brushes.Transparent, Cursor = Cursors.Hand, ToolTip = WorkedOn(t) ? "Completed" : "Mark as done" };
+            var box = new Grid { Height = first, VerticalAlignment = VerticalAlignment.Top, Background = Brushes.Transparent, Cursor = Cursors.Hand, ToolTip = "Mark as done" };
             var ring = new Ellipse { Width = ck, Height = ck, Stroke = T.Text, StrokeThickness = 1.5, Fill = Brushes.Transparent, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
             box.Children.Add(ring);
-            if (WorkedOn(t))
-            {   // the task being worked on: its circle carries a tick, so the one control says "completed" (Work.cs)
-                var done = Glyph("M5,9.4 L7.9,12.2 L13.2,6.2", T.Text, 1.8, 18, 18);
-                done.LayoutTransform = new ScaleTransform(ck / 18, ck / 18); done.HorizontalAlignment = HorizontalAlignment.Left;
-                box.Children.Add(done);
-            }
-            box.MouseEnter += (s, e) => ring.Fill = T.Soft;
-            box.MouseLeave += (s, e) => ring.Fill = Brushes.Transparent;
+            // the tick shows only under the mouse, faintly: on the task being timed it looked as if it were done (MakeRow)
+            var hint = Glyph("M5,9.4 L7.9,12.2 L13.2,6.2", T.Text, 1.8, 18, 18);
+            hint.LayoutTransform = new ScaleTransform(ck / 18, ck / 18); hint.HorizontalAlignment = HorizontalAlignment.Left; hint.Opacity = 0;
+            box.Children.Add(hint);
+            box.MouseEnter += (s, e) => { ring.Fill = T.Soft; hint.Opacity = 0.5; };
+            box.MouseLeave += (s, e) => { ring.Fill = Brushes.Transparent; hint.Opacity = 0; };
             box.MouseLeftButtonDown += (s, e) => { e.Handled = true; CompleteTask(t); };
             main.Children.Add(box);
             var title = new TextBlock { Text = t.Title, FontSize = titleSize, FontWeight = FontWeights.SemiBold, Foreground = T.Text, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Top, ToolTip = Tip(InfoText(t)) };

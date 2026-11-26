@@ -530,9 +530,6 @@ namespace Corner
             if (energy != null && (tab == 1 || full)) DrawEnergy();
         }
 
-        /// The task being worked on (and, by priority, one that was started and paused): its circle carries a tick (MakeRow, DrawFocus).
-        bool WorkedOn(TaskItem t) { return !t.Done && (t.Id == timerId || (PriorityMode && t.Worked > 0)); }
-
         // ------------------------------------------------------------ "Usually this morning": one-click chips under the add box
 
         Border addPill;      // the box you type a task into
