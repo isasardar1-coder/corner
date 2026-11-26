@@ -37,7 +37,6 @@ struct CardView: View {
             }
         }
         .frame(width: model.full ? fullW : cardW, alignment: .topLeading)
-        .frame(minHeight: model.full ? min(fullMinH, model.maxCardH) : 0, alignment: .top)
         .background(PanelBackground(radius: m.sp(32, T.glass ? 28 : 26)))
         .environment(\.m, m)
         .onPreferenceChange(HeaderHeightKey.self) { v in if abs(v - headH) > 0.5 { headH = v } }
@@ -299,18 +298,17 @@ struct FocusLine: View {
         let size: CGFloat = m.z(m.sp(22, 18))
         let first: CGFloat = max(size * 1.2, ck).rounded(.up)
         let pillH: CGFloat = m.sp(34, 30)
-        let worked: Bool = model.workedOn(t)
         HStack(alignment: .top, spacing: 0) {
             Circle()
                 .stroke(T.text, lineWidth: 1.5)
                 .background(Circle().fill(hot ? T.soft : Color.clear))
-                .overlay(tick(worked, ck))
+                .overlay(tick(hot, ck))
                 .frame(width: ck, height: ck)
                 .frame(width: ck + m.sp(11, 9), height: first, alignment: .leading)
                 .contentShape(Rectangle())
                 .onHover { hot = $0 }
                 .onTapGesture { model.completeTask(t) }
-                .help(worked ? "Completed" : "Mark as done")
+                .help("Mark as done")
             Text(t.title)
                 .font(Fonts.ui(size, true))
                 .foregroundColor(T.text)
@@ -327,11 +325,12 @@ struct FocusLine: View {
         }
     }
 
-    /// The task being worked on: its circle carries a tick, so the one control says "completed".
-    func tick(_ worked: Bool, _ ck: CGFloat) -> some View {
+    /// Under the mouse, a faint tick says the circle ticks the task off. (Always there on the task being timed, it
+    /// looked as if that task were done.)
+    func tick(_ hot: Bool, _ ck: CGFloat) -> some View {
         Glyph(d: Icons.tick, color: T.text, th: 1.8, w: 18, h: 18)
             .scaleEffect(ck / 18)
-            .opacity(worked ? 1 : 0)
+            .opacity(hot ? 0.5 : 0)
             .allowsHitTesting(false)
     }
 }

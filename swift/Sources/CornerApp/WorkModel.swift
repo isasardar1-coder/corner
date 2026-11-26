@@ -262,12 +262,6 @@ extension AppModel {
         shell?.contentChanged()
     }
 
-    /// The task being worked on (and, by priority, one that was started and paused): its circle carries a tick.
-    func workedOn(_ t: TaskItem) -> Bool {
-        if t.done { return false }
-        if t.id == timerId { return true }
-        return AppModel.priorityMode && t.worked > 0
-    }
 
     /// By priority: why the next task is next ("fits your peak"), or nil.
     func nextReason(_ t: TaskItem) -> String? {
