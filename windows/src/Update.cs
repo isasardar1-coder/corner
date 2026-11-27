@@ -21,7 +21,7 @@ namespace Corner
 {
     static class Updater
     {
-        public const string Version = "1.1.6";                   // this build; the release tag is "v" + this
+        public const string Version = "1.1.7";                   // this build; the release tag is "v" + this
         public const string Repo = "isasardar1-coder/corner";
         public const string ReleasePage = "https://github.com/" + Repo + "/releases/latest"; // what's new
         const string Asset = "Corner-Windows.zip";
