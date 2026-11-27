@@ -152,12 +152,14 @@ final class UpdateWatch {
         if !Updater.released { return }
         let was: Double = Settings.get("LastVersion", 0)
         let now: Double = UpdateInfo.number(Updater.version)
-        if was > 0 && was < now {
+        // the one notice: after Corner put this version in place itself ("SelfUpdated", set in checked), not after a
+        // copy put in place by hand. Checking and fetching are silent.
+        if was > 0 && was < now && Settings.get("SelfUpdated", 0) > 0.5 {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
-                self?.shell?.showToast("Corner is up to date: version " + Updater.version + ".")
+                self?.shell?.showToast("Corner updated itself to version " + Updater.version + ". What's new: Settings > Updates.")
             }
         }
-        if was != now { Settings.set("LastVersion", now) }
+        if was != now { Settings.set("LastVersion", now); Settings.set("SelfUpdated", 0) }
         next(test ? 3 : Updater.firstCheckSec)
     }
 
@@ -235,7 +237,7 @@ final class UpdateWatch {
             waiting = nil
             work = old
             note = "Version " + v + " is ready; Corner restarts in a moment"
-            shell?.showToast("Corner " + v + " is ready. It restarts as soon as you're not using it.")
+            Settings.set("SelfUpdated", 1) // no notice now: it comes after the restart (start)
             next(16)
         } else if let v = stuck {
             waiting = v

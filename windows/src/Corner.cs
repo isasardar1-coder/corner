@@ -564,7 +564,7 @@ namespace Corner
             mouseTimer.Tick += (s, e) => MouseTick();
             mouseTimer.Start();
             remindTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
-            remindTimer.Tick += (s, e) => { LogDays(); CheckReminders(); CheckInTick(); ApplyLogo(false); ApplyFullIcon(); ApplyTrayIcon(); }; // LogDays: yesterday into days.csv (Stats.cs)
+            remindTimer.Tick += (s, e) => { LogDays(); CheckReminders(); CheckInTick(); LiveEnergy(); ApplyLogo(false); ApplyFullIcon(); ApplyTrayIcon(); }; // LogDays: yesterday into days.csv (Stats.cs)
             remindTimer.Start();
 
             InitUpdates(test);
@@ -1465,7 +1465,7 @@ namespace Corner
             if (mode == "launch" || mode == "launchclose" || mode == "hoveropen" || mode == "hoverclose") { DemoLaunch(path, mode.EndsWith("close")); return; } // frames of the Genie effect (Launch.cs)
             if (mode == "cycleopen" || mode == "cycleclose") { DemoCycle(path, mode == "cycleclose"); return; } // the cycle out of its button
             if (mode == "fullswitch" || mode == "fullexit") { DemoSwitch(path, mode == "fullexit"); return; } // and of the switch to Full Mode and back
-            After(mode == "drag" || mode == "drawtime" ? 8000 : Environment.GetEnvironmentVariable("CORNER_FULL") == "1" ? 3200 : 1500, () => // (Full Mode needs longer to open)
+            After(mode == "drag" || mode == "drawtime" || mode == "livetime" ? 55000 : Environment.GetEnvironmentVariable("CORNER_FULL") == "1" ? 3200 : 1500, () => // (Full Mode needs longer to open)
             {
                 var root = (Grid)Content;
                 root.Background = new SolidColorBrush(Color.FromRgb(185, 177, 151)); // a sand backdrop for the test renders

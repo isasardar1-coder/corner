@@ -2,7 +2,9 @@
 // is one it downloads Corner-Windows.zip, takes Corner.exe out of it, puts it in place of the running one (Windows
 // lets a running exe be renamed, so the old one becomes Corner.old.exe), and restarts as soon as the panel is closed
 // and no timer is running. Your notes (tasks.json and the rest), ping.wav and the fonts are never touched.
-// Settings > Updates turns this off, and "Check now" asks straight away.
+// All of that is silent: the one notice comes after the restart, "Corner updated itself to version ..." (not after
+// a build put in place by hand). Settings > Updates turns this off, "Check now" asks straight away, and "Check what's
+// new here" opens the latest release on GitHub.
 
 using System;
 using System.Globalization;
@@ -21,6 +23,7 @@ namespace Corner
     {
         public const string Version = "1.1.6";                   // this build; the release tag is "v" + this
         public const string Repo = "isasardar1-coder/corner";
+        public const string ReleasePage = "https://github.com/" + Repo + "/releases/latest"; // what's new
         const string Asset = "Corner-Windows.zip";
         public const int FirstCheckSec = 60, EveryHours = 6;
 
@@ -118,8 +121,9 @@ namespace Corner
             double was = Settings.Get("LastVersion", 0), now = Updater.Number(Updater.Version);
             if (!test || Environment.GetEnvironmentVariable("CORNER_UPDATE_URL") != null)
             {
-                if (was > 0 && was < now) After(2500, () => ShowNudge("Corner is up to date: version " + Updater.Version + "."));
-                if (was != now) Settings.Set("LastVersion", now);
+                // only when Corner put this version in place itself ("SelfUpdated", set by CheckForUpdate)
+                if (was > 0 && was < now && Settings.Get("SelfUpdated", 0) > 0.5) After(2500, () => ShowNudge("Corner updated itself to version " + Updater.Version + ". What's new: Settings > Updates."));
+                if (was != now) { Settings.Set("LastVersion", now); Settings.Set("SelfUpdated", 0); }
             }
             if (test && Environment.GetEnvironmentVariable("CORNER_UPDATE_URL") == null) return; // test copies never look for updates
             updateTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(test ? 3 : Updater.FirstCheckSec) }; // a test against CORNER_UPDATE_URL checks at once
@@ -159,8 +163,8 @@ namespace Corner
                     updateNote = ready != null ? "Version " + ready + " is ready; Corner restarts in a moment." : note;
                     if (ready != null)
                     {
-                        updateReady = ready;
-                        ShowNudge("Corner " + ready + " is ready. It restarts as soon as you're not using it.");
+                        updateReady = ready; // no notice now: the one notice comes after the restart (InitUpdates)
+                        Settings.Set("SelfUpdated", 1);
                         if (updateTimer != null) updateTimer.Interval = TimeSpan.FromSeconds(30);
                         After(16000, RestartWhenFree);
                     }
@@ -185,8 +189,15 @@ namespace Corner
             bool on = UpdatesOn;
             SetLine(card, SettingLine("Updates", on ? "Automatic: Corner updates itself" : "Off: Corner doesn't look for updates",
                 Switch(on, () => { Settings.Set("AutoUpdate", on ? 0 : 1); DrawSettings(); })));
-            SetLine(card, SettingLine("Version " + Updater.Version, updateNote ?? "Checks every " + Updater.EveryHours + " hours",
-                Btn(updating ? "Checking…" : "Check now", 1, () => CheckForUpdate(true), 1)));
+            var line = SettingLine("Version " + Updater.Version, updateNote ?? "Checks every " + Updater.EveryHours + " hours.",
+                Btn(updating ? "Checking…" : "Check now", 1, () => CheckForUpdate(true), 1));
+            // after the note, a link to the latest release on GitHub
+            var sub = ((System.Windows.Controls.Panel)((System.Windows.Controls.Grid)line).Children[0]).Children[1] as System.Windows.Controls.TextBlock;
+            var link = new System.Windows.Documents.Hyperlink(new System.Windows.Documents.Run("Check what's new here.")) { Foreground = T.Text, Cursor = System.Windows.Input.Cursors.Hand, ToolTip = Updater.ReleasePage };
+            link.Click += (s, e) => { try { System.Diagnostics.Process.Start(Updater.ReleasePage); } catch (Exception ex) { Store.Log(ex); } };
+            sub.Inlines.Add(new System.Windows.Documents.Run(" "));
+            sub.Inlines.Add(link);
+            SetLine(card, line);
         }
     }
 }

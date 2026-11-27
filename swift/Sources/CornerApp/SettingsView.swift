@@ -211,9 +211,20 @@ struct PanelSettings: View {
         let every: String = "Checks every " + String(Updater.everyHours) + " hours"
         let stuck: Bool = w?.waiting != nil
         let label: String = w?.busy == true ? "Checking…" : (stuck ? "Download" : "Check now")
-        return SettingLine(title: "Version " + Updater.version, sub: w?.note ?? every) {
+        // the note, then a link to the latest release on GitHub
+        var said: String = w?.note ?? every
+        if !said.hasSuffix(".") { said += "." }
+        let words = LocalizedStringKey(said + " [Check what's new here.](" + Updater.page + ")")
+        return HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Version " + Updater.version).font(m.font(12.5)).foregroundColor(T.text).fixedSize(horizontal: false, vertical: true)
+                Text(words).font(m.font(10.5)).foregroundColor(T.muted).accentColor(T.text).fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
             Btn(text: label, kind: 1, on: 1) { if stuck { w?.openPage() } else { w?.check(manual: true) } }
-        }.any()
+        }
+        .padding(.vertical, m.sp(10, 9))
+        .any()
     }
 }
 

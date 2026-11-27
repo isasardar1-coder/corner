@@ -108,6 +108,7 @@ final class PanelController: NSObject, NSMenuDelegate {
             s.model.logDays()
             s.model.checkReminders()
             s.model.checkInTick()
+            s.model.liveEnergy()
         }
         let second = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.model.tick() }
         for t in [mouse, remind, second] {

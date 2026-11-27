@@ -1,4 +1,4 @@
-// Corner - the three made skins: Metal (brushed silver, white enamel, steel), Ceramic (sage stoneware and glazed
+﻿// Corner - the three made skins: Metal (brushed silver, white enamel, steel), Ceramic (sage stoneware and glazed
 // porcelain) and Paper (blue card and white paper). Their colours are in T (Corner.cs); this is what gives them depth.
 // Every box says what it is by the colour it is filled with (a tray, a card or pill, the strong colour, the accent),
 // and is drawn accordingly: a shadow under it, then its fill, then its grain, bevel and gloss over that.
@@ -261,6 +261,35 @@ namespace Corner
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 for (int i = 0; i < n; i++) { var rtb = new RenderTargetBitmap(pw, ph, 120, 120, PixelFormats.Pbgra32); rtb.Render(root); }
                 try { System.IO.File.AppendAllText(System.IO.Path.Combine(Store.Dir, "drawtime.txt"), T.Names[T.Skin] + (T.Glass && T.Dark ? " dark" : "") + (full ? " full " : " ") + (sw.ElapsedMilliseconds / (double)n).ToString("0.0", CultureInfo.InvariantCulture) + " ms" + Environment.NewLine); } catch { }
+            });
+        }
+
+        /// Test hook "livetime": what LiveEnergy costs. The energy view is drawn again every 200 ms, with the app idle in
+        /// between as it is between minutes, LiveN times (60 unless set); then, after a few idle seconds, the time per redraw
+        /// and the managed memory after the 10th redraw and at the end go into livetime.txt.
+        void DemoLiveTime()
+        {
+            After(4000, () =>
+            {
+                var root = (Grid)Content;
+                int n = (int)Settings.Get("LiveN", 60), done = 0; long at10 = 0; double ms = 0;
+                Func<long> mem = () => { GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect(); return GC.GetTotalMemory(true) >> 10; };
+                var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+                t.Tick += (s, e) =>
+                {
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                    RefreshEnergy(false); root.UpdateLayout();
+                    ms += sw.Elapsed.TotalMilliseconds;
+                    if (++done == 10) at10 = mem();
+                    if (done < n) return;
+                    t.Stop();
+                    After(3000, () =>
+                    {
+                        long end = mem();
+                        try { System.IO.File.AppendAllText(System.IO.Path.Combine(Store.Dir, "livetime.txt"), T.Names[T.Skin] + ": " + n + " redraws, " + (ms / n).ToString("0.0", CultureInfo.InvariantCulture) + " ms each (layout, without painting); managed after 10: " + at10 + " KB, at the end: " + end + " KB" + Environment.NewLine); } catch { }
+                    });
+                };
+                t.Start();
             });
         }
     }

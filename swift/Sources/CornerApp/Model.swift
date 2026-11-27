@@ -115,6 +115,7 @@ final class AppModel: ObservableObject {
     var habitPart = -1
     var habitDay = Date.distantPast
     var feelEntries: [Calibration.Entry]? = nil // feel.csv, read once and kept
+    var liveAt = 0                  // the minute liveEnergy last brought the curve up to date
     var feelEditing = false         // the energy % is a box being typed into
     var feelAsk: FeelAsk? = nil     // a correction typed in, waiting for "Fine-tune the chart" or "Only the number"
     var feelAfter: FeelAfter? = nil // after a correction: re-plan the day? bring a high-effort task forward?
@@ -315,6 +316,18 @@ final class AppModel: ObservableObject {
             showFeedback(now)
         }
         changed()
+    }
+
+    /// From the 10-second timer: while the energy view is on screen (Full Mode, or the corner panel's energy tab), the
+    /// curve is worked out again once a minute, so "now" on the chart, the percentage and the peak line move with the
+    /// clock. It waits while a mouse button is down or the % is being typed. Port of LiveEnergy (Energy.cs).
+    func liveEnergy() {
+        if !shown || energy == nil || settingsOpen || !(full || tab == 1) || feelEditing { return }
+        let now = AppModel.now()
+        let minute = Int(now.timeIntervalSince1970 / 60)
+        if minute == liveAt || NSEvent.pressedMouseButtons != 0 { return }
+        liveAt = minute
+        refreshEnergy(opening: false)
     }
 
     /// The colour that says where a moment falls on today's curve: lime on a peak, forest in the dip, grey between.
